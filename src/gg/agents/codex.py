@@ -35,6 +35,20 @@ def _progress_ticker(console, stop_event: threading.Event) -> None:
             console.print(f"    [dim]... Codex working ({elapsed}s elapsed)[/dim]")
 
 
+def _get_mcp_disable_flags() -> list[str]:
+    """Read ~/.codex/config.toml and generate -c flags to disable all MCP servers."""
+    config_path = Path.home() / ".codex" / "config.toml"
+    if not config_path.exists():
+        return []
+    try:
+        text = config_path.read_text(encoding="utf-8")
+        import re
+        servers = re.findall(r"\[mcp_servers\.(\w+)\]", text)
+        return [f"mcp_servers.{s}.enabled=false" for s in servers]
+    except OSError:
+        return []
+
+
 class CodexAgent(AgentBackend):
     def __init__(self, console=None, debug: bool = False):
         self._console = console
@@ -82,15 +96,18 @@ class CodexAgent(AgentBackend):
         stop_event = threading.Event()
         full_input = f"{context}\n\n---\n\n{prompt}"
 
+        cmd = [
+            "codex", "exec",
+            "--sandbox", "read-only",
+            "--skip-git-repo-check",
+            "--ephemeral",
+        ]
+        for disable_flag in _get_mcp_disable_flags():
+            cmd = [*cmd, "-c", disable_flag]
+        cmd = [*cmd, "-o", str(out_path), "-"]
+
         proc = subprocess.Popen(
-            [
-                "codex", "exec",
-                "--sandbox", "read-only",
-                "--skip-git-repo-check",
-                "--ephemeral",
-                "-o", str(out_path),
-                "-",
-            ],
+            cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

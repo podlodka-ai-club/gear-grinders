@@ -98,8 +98,9 @@ def run_init(
     if user_ctx.integrations:
         console.print(f"  [green]Integrations:[/green] {user_ctx.integrations}")
 
-    # Init is local-only for speed. Use `gg constitution` for Codex-enhanced version.
-    agent = None
+    # Codex fast mode: stdin + read-only + MCP disabled = instant response
+    from gg.agents.codex import CodexAgent
+    agent = CodexAgent(console=console, debug=debug) if codex_available else None
 
     # 6. Display summary
     _print_summary(languages, dependencies, structure, git_profile, console)
