@@ -88,7 +88,6 @@ class CodexAgent(AgentBackend):
                 "--sandbox", "read-only",
                 "--skip-git-repo-check",
                 "--ephemeral",
-                "--ignore-user-config",
                 "-o", str(out_path),
                 "-",
             ],
