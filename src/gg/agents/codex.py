@@ -82,13 +82,15 @@ class CodexAgent(AgentBackend):
         stop_event = threading.Event()
         full_input = f"{context}\n\n---\n\n{prompt}"
 
+        import os
+        clean_env = {**os.environ, "CODEX_DISABLE_MCP": "1"}
+
         proc = subprocess.Popen(
             [
                 "codex", "exec",
                 "--sandbox", "read-only",
                 "--skip-git-repo-check",
                 "--ephemeral",
-                "-c", 'mcp_servers=[]',
                 "-o", str(out_path),
                 "-",
             ],
@@ -97,6 +99,7 @@ class CodexAgent(AgentBackend):
             stderr=subprocess.PIPE,
             text=True,
             cwd=cwd,
+            env=clean_env,
         )
 
         if self._console:
