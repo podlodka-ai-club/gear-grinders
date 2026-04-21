@@ -42,15 +42,14 @@ class CodexAgent(AgentBackend):
 
     def generate(self, prompt: str, *, cwd: str | None = None, timeout: int | None = None,
                  context: str | None = None) -> str:
-        """Generate with Codex. If context is provided, pipe it via stdin (no file reads)."""
         effective_timeout = timeout or CODEX_TIMEOUT
-        retries = 0 if timeout else MAX_RETRIES
+        retries = 0 if (timeout or context) else MAX_RETRIES
         out_path = Path(tempfile.mktemp(suffix=".md"))
 
         for attempt in range(retries + 1):
             try:
                 if context:
-                    output = self._run_with_context(prompt, context, out_path, cwd, effective_timeout)
+                    output = self._run_fast(prompt, context, out_path, cwd, effective_timeout)
                 elif self._console:
                     output = self._run_with_progress(prompt, out_path, cwd, effective_timeout)
                 else:
@@ -60,7 +59,7 @@ class CodexAgent(AgentBackend):
                     return output
                 if attempt < retries:
                     if self._console:
-                        self._console.print(f"    [yellow]Empty response, retrying...[/yellow]")
+                        self._console.print("    [yellow]Empty response, retrying...[/yellow]")
                     continue
                 return ""
             except subprocess.TimeoutExpired:
@@ -77,15 +76,14 @@ class CodexAgent(AgentBackend):
                 raise
         return ""
 
-    def _run_with_context(self, prompt: str, context: str, out_path: Path,
-                          cwd: str | None, timeout: int) -> str:
-        """Pipe context via stdin -- Codex won't read files, just processes the input."""
+    def _run_fast(self, prompt: str, context: str, out_path: Path,
+                  cwd: str | None, timeout: int) -> str:
+        """Fast mode: pipe context via stdin, read-only sandbox (no tool calls)."""
         stop_event = threading.Event()
-
         full_input = f"{context}\n\n---\n\n{prompt}"
 
         proc = subprocess.Popen(
-            ["codex", "exec", "-o", str(out_path), "-"],
+            ["codex", "exec", "--sandbox", "read-only", "-o", str(out_path), "-"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -133,6 +131,7 @@ class CodexAgent(AgentBackend):
 
     def _run_with_progress(self, prompt: str, out_path: Path, cwd: str | None,
                            timeout: int = CODEX_TIMEOUT) -> str:
+        """Full agent mode: Codex reads files, uses tools."""
         stop_event = threading.Event()
         proc = subprocess.Popen(
             ["codex", "exec", "-o", str(out_path), prompt],

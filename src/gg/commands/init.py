@@ -98,9 +98,10 @@ def run_init(
     if user_ctx.integrations:
         console.print(f"  [green]Integrations:[/green] {user_ctx.integrations}")
 
-    # Codex is NOT used during init (too slow for analysis).
-    # It will be used later by gg run/issue for code generation.
-    agent = None
+    # Codex in init uses fast mode: stdin + read-only sandbox (no file reads).
+    # Context is piped from our local analyzers -- Codex just formulates rules.
+    from gg.agents.codex import CodexAgent
+    agent = CodexAgent(console=console, debug=debug) if codex_available else None
 
     # 6. Display summary
     _print_summary(languages, dependencies, structure, git_profile, console)
