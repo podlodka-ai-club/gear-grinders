@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 
 class AgentBackend(ABC):
     @abstractmethod
-    def generate(self, prompt: str, *, cwd: str | None = None) -> str:
+    def generate(self, prompt: str, *, cwd: str | None = None, timeout: int | None = None) -> str:
         """Run the agent with a prompt. Returns generated text."""
 
     @abstractmethod

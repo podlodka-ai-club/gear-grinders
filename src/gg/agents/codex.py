@@ -40,34 +40,38 @@ class CodexAgent(AgentBackend):
         self._console = console
         self._debug = debug
 
-    def generate(self, prompt: str, *, cwd: str | None = None) -> str:
+    def generate(self, prompt: str, *, cwd: str | None = None, timeout: int | None = None) -> str:
+        effective_timeout = timeout or CODEX_TIMEOUT
+        retries = 0 if timeout else MAX_RETRIES
         out_path = Path(tempfile.mktemp(suffix=".md"))
 
-        for attempt in range(MAX_RETRIES + 1):
+        for attempt in range(retries + 1):
             try:
                 if self._console:
-                    output = self._run_with_progress(prompt, out_path, cwd)
+                    output = self._run_with_progress(prompt, out_path, cwd, effective_timeout)
                 else:
-                    output = self._run_silent(prompt, out_path, cwd)
+                    output = self._run_silent(prompt, out_path, cwd, effective_timeout)
 
                 if output:
                     return output
-                if attempt < MAX_RETRIES:
+                if attempt < retries:
                     continue
                 return ""
             except subprocess.TimeoutExpired:
                 out_path.unlink(missing_ok=True)
-                if attempt < MAX_RETRIES:
+                if attempt < retries:
+                    if self._console:
+                        self._console.print(f"    [yellow]Timeout after {effective_timeout}s, retrying...[/yellow]")
                     continue
-                raise RuntimeError(f"Codex timed out after {CODEX_TIMEOUT}s")
+                raise RuntimeError(f"Codex timed out after {effective_timeout}s")
             except RuntimeError:
                 out_path.unlink(missing_ok=True)
-                if attempt < MAX_RETRIES:
+                if attempt < retries:
                     continue
                 raise
         return ""
 
-    def _run_with_progress(self, prompt: str, out_path: Path, cwd: str | None) -> str:
+    def _run_with_progress(self, prompt: str, out_path: Path, cwd: str | None, timeout: int = CODEX_TIMEOUT) -> str:
         stop_event = threading.Event()
         proc = subprocess.Popen(
             ["codex", "exec", "-o", str(out_path), prompt],
@@ -92,7 +96,7 @@ class CodexAgent(AgentBackend):
         worker.start()
 
         try:
-            proc.wait(timeout=CODEX_TIMEOUT)
+            proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             stop_event.set()
             proc.kill()
@@ -113,12 +117,12 @@ class CodexAgent(AgentBackend):
 
         return output
 
-    def _run_silent(self, prompt: str, out_path: Path, cwd: str | None) -> str:
+    def _run_silent(self, prompt: str, out_path: Path, cwd: str | None, timeout: int = CODEX_TIMEOUT) -> str:
         result = subprocess.run(
             ["codex", "exec", "-o", str(out_path), prompt],
             capture_output=True,
             text=True,
-            timeout=CODEX_TIMEOUT,
+            timeout=timeout,
             cwd=cwd,
         )
         output = ""

@@ -53,7 +53,7 @@ def discover_context_via_codex(
     """Let Codex discover project context instead of asking the user."""
     console.print("  [bold]Codex researching project context...[/bold]")
     try:
-        raw = agent.generate(CODEX_RESEARCH_PROMPT, cwd=project_path)
+        raw = agent.generate(CODEX_RESEARCH_PROMPT, cwd=project_path, timeout=120)
         return _parse_research_output(raw)
     except RuntimeError as e:
         console.print(f"  [yellow]Research failed: {e}[/yellow]")
