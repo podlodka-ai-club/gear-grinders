@@ -345,14 +345,20 @@ def generate_specs(
         console.print(f"    Found existing CLAUDE.md ({len(existing_claude_md)} chars), will incorporate")
 
     if agent and agent.is_available():
-        console.print("    Sending collected context to Codex (no file reads)...")
-        context_parts = [analyzer_context]
+        console.print("    Sending compact context to Codex (fast mode, no file reads)...")
+        from gg.analyzers.languages import analyze_languages as _al
+        from gg.analyzers.dependencies import analyze_dependencies as _ad
+        from gg.analyzers.structure import analyze_structure as _as
+        compact_context = "\n\n".join([
+            _al(root).to_prompt_context(),
+            _ad(root).to_prompt_context(),
+            _as(root).to_prompt_context(),
+        ])
         if existing_agents_md:
-            context_parts = [*context_parts, f"\n## Existing AGENTS.md\n\n{existing_agents_md[:3000]}"]
-        full_context = "\n\n".join(context_parts)
+            compact_context += f"\n\n## Existing project rules (from AGENTS.md, first 1500 chars)\n\n{existing_agents_md[:1500]}"
         prompt = _build_full_prompt(user_ctx, "", existing_agents_md="")
         try:
-            raw = agent.generate(prompt, cwd=str(root), context=full_context, timeout=180)
+            raw = agent.generate(prompt, cwd=str(root), context=compact_context, timeout=90)
             console.print("    Parsing Codex response...")
             sections = _parse_codex_output(raw)
             console.print(f"    Found {len(sections)} sections: {', '.join(sections.keys())}")
