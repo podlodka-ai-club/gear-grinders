@@ -73,12 +73,7 @@ def run_init(
     # 3. Detect platform
     platform = _detect_and_confirm_platform(project_path, check_map, non_interactive, console)
 
-    # 4. Initialize grepai if available
-    grepai_available = check_map.get("grepai", type("", (), {"ok": False})).ok
-    if grepai_available:
-        _init_grepai(project_path, console)
-
-    # 5. Run analyzers (local, fast -- no LLM)
+    # 4. Run analyzers (local, fast -- no LLM)
     console.print()
     languages, dependencies, structure, git_profile = _run_analyzers(project_path, console)
 

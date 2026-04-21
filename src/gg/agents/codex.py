@@ -95,8 +95,7 @@ class CodexAgent(AgentBackend):
 
     def _run_fast(self, prompt: str, context: str, out_path: Path,
                   cwd: str | None, timeout: int) -> str:
-        """Fast mode: pipe context via stdin, read-only sandbox (no tool calls)."""
-        stop_event = threading.Event()
+        """Fast mode: pipe context via stdin, read-only sandbox, no hooks, no MCP."""
         full_input = f"{context}\n\n---\n\n{prompt}"
 
         cmd = [
@@ -109,36 +108,23 @@ class CodexAgent(AgentBackend):
             cmd = [*cmd, "-c", flag]
         cmd = [*cmd, "-o", str(out_path), "-"]
 
-        proc = subprocess.Popen(
+        if self._console and self._debug:
+            from rich.text import Text
+            self._console.print(Text(f"    cmd: {' '.join(cmd[:8])}...", style="dim"))
+            self._console.print(Text(f"    input: {len(full_input)} chars", style="dim"))
+
+        result = subprocess.run(
             cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            input=full_input,
+            capture_output=True,
             text=True,
+            timeout=timeout,
             cwd=cwd,
         )
 
-        if self._console:
-            worker = threading.Thread(
-                target=_progress_ticker,
-                args=(self._console, stop_event),
-                daemon=True,
-            )
-            worker.start()
-
-        try:
-            stdout, stderr = proc.communicate(input=full_input, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            stop_event.set()
-            proc.kill()
-            proc.communicate()
-            raise
-        finally:
-            stop_event.set()
-
-        if self._debug and self._console and stderr:
+        if self._debug and self._console and result.stderr:
             from rich.text import Text
-            for line in stderr.strip().splitlines()[-10:]:
+            for line in result.stderr.strip().splitlines()[-5:]:
                 self._console.print(Text(f"    {line}", style="dim"))
 
         output = ""
@@ -146,9 +132,8 @@ class CodexAgent(AgentBackend):
             output = out_path.read_text(encoding="utf-8").strip()
             out_path.unlink(missing_ok=True)
 
-        if not output and proc.returncode != 0:
-            stderr = proc.stderr.read() if proc.stderr else ""
-            raise RuntimeError(f"Codex failed (rc={proc.returncode}): {stderr[:200]}")
+        if not output and result.returncode != 0:
+            raise RuntimeError(f"Codex failed (rc={result.returncode}): {result.stderr.strip()[:200]}")
 
         return output
 
