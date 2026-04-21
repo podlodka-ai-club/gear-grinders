@@ -15,6 +15,8 @@ MAX_RETRIES = 1
 
 def _stream_stderr_debug(proc: subprocess.Popen, console, stop_event: threading.Event) -> None:
     """In debug mode: print all Codex stderr output."""
+    from rich.text import Text
+
     if not proc.stderr:
         return
     for raw_line in proc.stderr:
@@ -22,7 +24,7 @@ def _stream_stderr_debug(proc: subprocess.Popen, console, stop_event: threading.
             break
         line = raw_line.rstrip()
         if line:
-            console.print(f"    [dim]{line}[/dim]")
+            console.print(Text(f"    {line}", style="dim"))
 
 
 def _progress_ticker(console, stop_event: threading.Event) -> None:
