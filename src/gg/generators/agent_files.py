@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 
 from gg.analyzers.dependencies import DependencyReport
@@ -117,7 +118,6 @@ def _smart_merge(
             gaps.append(test_info)
 
     if not _has_section(existing_lower, ["grepai", "semantic search"]):
-        import shutil
         if shutil.which("grepai"):
             gaps.append(_build_grepai_section())
 
