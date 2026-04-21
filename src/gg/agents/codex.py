@@ -88,7 +88,7 @@ class CodexAgent(AgentBackend):
                 "--sandbox", "read-only",
                 "--skip-git-repo-check",
                 "--ephemeral",
-                "--disable", "mcp",
+                "-c", 'mcp_servers=[]',
                 "-o", str(out_path),
                 "-",
             ],
