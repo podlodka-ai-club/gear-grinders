@@ -43,6 +43,7 @@ def run_init(
     path: str,
     force: bool,
     skip_codex: bool,
+    skip_knowledge: bool = False,
     non_interactive: bool,
 ) -> None:
     console = Console()
@@ -107,26 +108,34 @@ def run_init(
         git_profile.to_prompt_context(),
     ])
 
+    step = 0
+    total_steps = (0 if skip_knowledge else 1) + 2  # knowledge + specs + agent_files
+
     engine = KnowledgeEngine(project_path)
 
     # 8a. Knowledge system
-    console.print("  [dim][1/3][/dim] Building knowledge system...")
-    console.print("    Analyzing git history for entities...")
-    stats = engine.rebuild()
-    console.print(f"    Recording init event ({languages.primary_language}, {dependencies.package_manager})...")
-    engine.record_init(data={
-        "total_commits": git_profile.total_commits,
-        "contributors_count": len(git_profile.contributors),
-        "top_level_dirs": structure.top_level_dirs,
-        "is_monorepo": structure.is_monorepo,
-        "primary_language": languages.primary_language,
-        "package_manager": dependencies.package_manager,
-    })
-    console.print(f"  [green]  -> {stats['entities']} entities, {stats['facts']} facts, "
-                  f"{stats['events_processed']} events[/green]")
+    if skip_knowledge:
+        console.print("  [yellow]Skipping knowledge system (--skip-knowledge)[/yellow]")
+    else:
+        step += 1
+        console.print(f"  [dim][{step}/{total_steps}][/dim] Building knowledge system...")
+        console.print("    Analyzing git history for entities...")
+        stats = engine.rebuild()
+        console.print(f"    Recording init event ({languages.primary_language}, {dependencies.package_manager})...")
+        engine.record_init(data={
+            "total_commits": git_profile.total_commits,
+            "contributors_count": len(git_profile.contributors),
+            "top_level_dirs": structure.top_level_dirs,
+            "is_monorepo": structure.is_monorepo,
+            "primary_language": languages.primary_language,
+            "package_manager": dependencies.package_manager,
+        })
+        console.print(f"  [green]  -> {stats['entities']} entities, {stats['facts']} facts, "
+                      f"{stats['events_processed']} events[/green]")
 
     # 8b. Specs and constitution
-    console.print("  [dim][2/3][/dim] Generating specs and constitution...")
+    step += 1
+    console.print(f"  [dim][{step}/{total_steps}][/dim] Generating specs and constitution...")
     generate_specs(
         project_path=project_path,
         agent=agent,
@@ -137,7 +146,8 @@ def run_init(
     )
 
     # 8c. Agent instruction files
-    console.print("  [dim][3/3][/dim] Generating agent instruction files...")
+    step += 1
+    console.print(f"  [dim][{step}/{total_steps}][/dim] Generating agent instruction files...")
     constitution_path = gg_dir / "constitution.md"
     generate_agent_files(
         project_path=project_path,
