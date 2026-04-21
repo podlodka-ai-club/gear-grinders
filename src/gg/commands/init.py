@@ -86,19 +86,30 @@ def run_init(
         domains=codebase_insights.get("domains", ""),
         integrations=codebase_insights.get("integrations", ""),
     )
-    if user_ctx.description:
-        console.print(f"  [green]Description:[/green] {user_ctx.description}")
-    if user_ctx.domains:
-        console.print(f"  [green]Domains:[/green] {user_ctx.domains}")
-    if user_ctx.integrations:
-        console.print(f"  [green]Integrations:[/green] {user_ctx.integrations}")
-
     # Codex fast mode: stdin + read-only + MCP disabled = instant response
     from gg.agents.codex import CodexAgent
     agent = CodexAgent(console=console, debug=debug) if codex_available else None
 
+    # Quick Codex description if local one is weak
+    if agent and agent.is_available() and len(user_ctx.description) < 30:
+        ctx = f"{languages.primary_language} project, {', '.join(languages.frameworks[:3])}, dirs: {', '.join(structure.top_level_dirs[:5])}"
+        try:
+            desc = agent.generate(
+                "Что делает этот проект? Одно предложение, по-русски.",
+                context=ctx, timeout=30,
+            )
+            if desc and len(desc) > 20:
+                user_ctx = UserContext(description=desc.strip().split("\n")[0][:200], domains=user_ctx.domains, integrations=user_ctx.integrations)
+        except RuntimeError:
+            pass
+
     # 6. Display summary
-    _print_summary(languages, dependencies, structure, git_profile, console)
+    _print_summary(
+        languages, dependencies, structure, git_profile, console,
+        description=user_ctx.description if user_ctx else "",
+        domains=user_ctx.domains if user_ctx else "",
+        integrations=user_ctx.integrations if user_ctx else "",
+    )
 
     # 7. Create directories
     gg_dir.mkdir(parents=True, exist_ok=True)
@@ -253,15 +264,26 @@ def _print_summary(
     struct: StructureMap,
     git: GitProfile,
     console: Console,
+    description: str = "",
+    domains: str = "",
+    integrations: str = "",
 ) -> None:
     lines = []
+    if description:
+        lines.append(f"[bold]{description}[/bold]")
+        lines.append("")
     lines.append(f"[bold]Language:[/bold] {langs.primary_language} ({langs.total_files} files)")
     if langs.frameworks:
         lines.append(f"[bold]Frameworks:[/bold] {', '.join(langs.frameworks)}")
     lines.append(f"[bold]Package manager:[/bold] {deps.package_manager}")
-    lines.append(f"[bold]Dirs:[/bold] {', '.join(struct.top_level_dirs[:8])}")
     if struct.is_monorepo:
         lines.append("[bold]Type:[/bold] Monorepo")
+    if domains:
+        lines.append(f"[bold]Packages:[/bold] {domains}")
+    else:
+        lines.append(f"[bold]Dirs:[/bold] {', '.join(struct.top_level_dirs[:8])}")
+    if integrations:
+        lines.append(f"[bold]Integrations:[/bold] {integrations}")
     lines.append(f"[bold]Git:[/bold] {git.total_commits} commits, {len(git.contributors)} contributors")
     if git.first_commit_date:
         lines.append(f"[bold]History:[/bold] {git.first_commit_date} -- {git.last_commit_date}")

@@ -71,12 +71,11 @@ def analyze_codebase(project_path: str | Path) -> dict[str, str]:
     imports = scan_imports(root)
 
     if not description:
-        parts = []
+        title = _title_from_readme(root)
+        parts = [title] if title else [root.name]
         if domains:
-            parts.append(f"Modules: {domains}")
-        if integrations:
-            parts.append(f"Integrations: {integrations}")
-        description = "; ".join(parts) if parts else root.name
+            parts = [*parts, f"({domains})"]
+        description = " ".join(parts)
 
     return {
         "description": description,
@@ -90,37 +89,23 @@ def analyze_codebase(project_path: str | Path) -> dict[str, str]:
 
 
 def _extract_description(root: Path) -> str:
-    """Extract project description from README or package files."""
-    for readme_name in ("README.md", "README.rst", "README.txt", "README"):
-        readme = root / readme_name
-        if readme.exists():
-            text = readme.read_text(encoding="utf-8", errors="ignore")
-            lines = text.strip().splitlines()
-            desc_lines: list[str] = []
-            past_title = False
-            for line in lines:
-                if line.startswith("#") and not past_title:
-                    past_title = True
-                    continue
-                if not past_title:
-                    continue
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                if stripped.startswith("#") or stripped.startswith("```") or stripped.startswith("["):
-                    break
-                if stripped.startswith("- ") or stripped.startswith("* ") or stripped.startswith("|"):
-                    continue
-                if stripped.startswith("![") or stripped.startswith("<"):
-                    continue
-                cleaned = _strip_markdown(stripped)
-                if cleaned and len(cleaned) > 20:
-                    desc_lines = [*desc_lines, cleaned]
-                    if len(desc_lines) >= 2:
-                        break
-            if desc_lines:
-                return " ".join(desc_lines)[:200]
+    """Extract project description. Priority: package files > README paragraph > title."""
+    desc = _desc_from_package_files(root)
+    if desc:
+        return desc
 
+    desc = _desc_from_readme(root)
+    if desc:
+        return desc
+
+    title = _title_from_readme(root)
+    if title:
+        return title
+
+    return ""
+
+
+def _desc_from_package_files(root: Path) -> str:
     pkg_json = root / "package.json"
     if pkg_json.exists():
         try:
@@ -140,6 +125,47 @@ def _extract_description(root: Path) -> str:
         except OSError:
             pass
 
+    return ""
+
+
+def _title_from_readme(root: Path) -> str:
+    for readme_name in ("README.md", "README.rst", "README.txt"):
+        readme = root / readme_name
+        if readme.exists():
+            for line in readme.read_text(encoding="utf-8", errors="ignore").splitlines():
+                if line.startswith("# "):
+                    return _strip_markdown(line.lstrip("# ").strip())[:200]
+    return ""
+
+
+def _desc_from_readme(root: Path) -> str:
+    for readme_name in ("README.md", "README.rst", "README.txt"):
+        readme = root / readme_name
+        if not readme.exists():
+            continue
+        text = readme.read_text(encoding="utf-8", errors="ignore")
+        lines = text.strip().splitlines()
+        past_title = False
+        for line in lines:
+            if line.startswith("#") and not past_title:
+                past_title = True
+                continue
+            if not past_title:
+                continue
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("#") or stripped.startswith("```"):
+                break
+            if stripped.startswith("- ") or stripped.startswith("* ") or stripped.startswith("|"):
+                continue
+            if stripped.startswith("[") or stripped.startswith("![") or stripped.startswith("<"):
+                continue
+            if "roadmap" in stripped.lower() or "see our" in stripped.lower():
+                continue
+            cleaned = _strip_markdown(stripped)
+            if cleaned and len(cleaned) > 30:
+                return cleaned[:200]
     return ""
 
 
