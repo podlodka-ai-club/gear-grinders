@@ -372,7 +372,8 @@ class KnowledgeCompiler:
     def _write_decision(self, d: Decision) -> None:
         decisions_dir = self._knowledge / "decisions"
         decisions_dir.mkdir(exist_ok=True)
-        slug = d.title.lower().replace(" ", "-")[:50]
+        import re
+        slug = re.sub(r"[^a-z0-9-]", "", d.title.lower().replace(" ", "-"))[:50]
         ts = d.timestamp[:10] if d.timestamp else "unknown"
         filename = f"{ts}-{slug}.md"
 
