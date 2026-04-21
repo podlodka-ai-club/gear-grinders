@@ -14,7 +14,7 @@ from gg.analyzers.git_history import GitProfile, analyze_git_history
 from gg.analyzers.languages import LanguageProfile, analyze_languages
 from gg.analyzers.structure import StructureMap, analyze_structure
 from gg.generators.agent_files import generate_agent_files
-from gg.generators.specs import UserContext, ask_user_context, generate_specs
+from gg.generators.specs import UserContext, ask_user_context, discover_context_via_codex, generate_specs
 from gg.knowledge.engine import KnowledgeEngine
 from gg.platforms.base import detect_platform
 from gg.utils.git_ops import find_repo_root, get_main_branch, get_remote_url, parse_remote_url
@@ -71,9 +71,19 @@ def run_init(
     # 3. Detect platform
     platform = _detect_and_confirm_platform(project_path, check_map, non_interactive, console)
 
-    # 4. Interactive questions
+    # 4. Discover project context
+    agent = CodexAgent() if codex_available else None
     user_ctx: UserContext | None = None
-    if not non_interactive:
+    if agent and agent.is_available():
+        console.print()
+        user_ctx = discover_context_via_codex(agent, str(project_path), console)
+        if user_ctx.description:
+            console.print(f"  [green]Description:[/green] {user_ctx.description}")
+        if user_ctx.domains:
+            console.print(f"  [green]Domains:[/green] {user_ctx.domains}")
+        if user_ctx.integrations:
+            console.print(f"  [green]Integrations:[/green] {user_ctx.integrations}")
+    elif not non_interactive:
         console.print()
         user_ctx = ask_user_context(console)
 
@@ -96,8 +106,6 @@ def run_init(
         structure.to_prompt_context(),
         git_profile.to_prompt_context(),
     ])
-
-    agent = CodexAgent() if codex_available else None
 
     engine = KnowledgeEngine(project_path)
 

@@ -29,6 +29,17 @@ CODEX_ANALYSIS_PROMPT = """\
 """
 
 
+CODEX_RESEARCH_PROMPT = """\
+Проанализируй кодовую базу этого проекта и ответь коротко в формате:
+
+DESCRIPTION: <что делает проект, 1-2 предложения>
+DOMAINS: <основные домены/модули через запятую>
+INTEGRATIONS: <внешние интеграции: APIs, базы данных, сервисы через запятую>
+
+Анализируй файлы, зависимости и структуру. Если чего-то нет -- напиши "none".
+"""
+
+
 @dataclass(frozen=True)
 class UserContext:
     description: str = ""
@@ -36,27 +47,47 @@ class UserContext:
     integrations: str = ""
 
 
+def discover_context_via_codex(
+    agent: "AgentBackend", project_path: str, console: Console,
+) -> UserContext:
+    """Let Codex discover project context instead of asking the user."""
+    console.print("  [bold]Codex researching project context...[/bold]")
+    try:
+        raw = agent.generate(CODEX_RESEARCH_PROMPT, cwd=project_path)
+        return _parse_research_output(raw)
+    except RuntimeError as e:
+        console.print(f"  [yellow]Research failed: {e}[/yellow]")
+        return UserContext()
+
+
+def _parse_research_output(raw: str) -> UserContext:
+    description = ""
+    domains = ""
+    integrations = ""
+    for line in raw.splitlines():
+        line = line.strip()
+        upper = line.upper()
+        if upper.startswith("DESCRIPTION:"):
+            description = line.split(":", 1)[1].strip()
+        elif upper.startswith("DOMAINS:") or upper.startswith("DOMAIN:"):
+            domains = line.split(":", 1)[1].strip()
+        elif upper.startswith("INTEGRATIONS:") or upper.startswith("INTEGRATION:"):
+            integrations = line.split(":", 1)[1].strip()
+    if domains.lower() == "none":
+        domains = ""
+    if integrations.lower() == "none":
+        integrations = ""
+    return UserContext(description=description, domains=domains, integrations=integrations)
+
+
 def ask_user_context(console: Console) -> UserContext:
+    """Fallback: ask user manually if Codex is not available."""
     description = Prompt.ask(
         "[bold]Опишите проект[/bold] в 1-2 предложениях",
         default="",
         console=console,
     )
-    domains = Prompt.ask(
-        "[bold]Основные домены/модули[/bold] (через запятую)",
-        default="",
-        console=console,
-    )
-    integrations = Prompt.ask(
-        "[bold]Внешние интеграции[/bold] (APIs, DBs, сервисы)",
-        default="",
-        console=console,
-    )
-    return UserContext(
-        description=description.strip(),
-        domains=domains.strip(),
-        integrations=integrations.strip(),
-    )
+    return UserContext(description=description.strip())
 
 
 def _build_full_prompt(user_ctx: UserContext, analyzer_context: str) -> str:
