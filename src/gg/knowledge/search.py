@@ -131,10 +131,29 @@ class KnowledgeSearch:
     def build_context_for_issue(self, issue_title: str, issue_body: str = "") -> str:
         """Build a knowledge context string for agent prompts."""
         results = self.find_related_to_issue(issue_title, issue_body)
-        if not results:
+
+        sections: list[str] = []
+
+        goals_path = self._root / ".gg" / "goals.md"
+        if goals_path.exists():
+            goals = goals_path.read_text(encoding="utf-8").strip()
+            if goals:
+                sections.append(f"## Project Goals\n\n{goals}")
+
+        risk_path = self._knowledge / "risk-register.md"
+        if risk_path.exists():
+            risk_content = risk_path.read_text(encoding="utf-8")
+            high_risks = [l for l in risk_content.splitlines() if "| High |" in l]
+            if high_risks:
+                sections.append("\n## High-Priority Risks\n")
+                for line in high_risks[:5]:
+                    sections.append(line)
+
+        if not results and not sections:
             return ""
 
-        sections: list[str] = ["## Relevant Knowledge"]
+        if results:
+            sections.append("\n## Relevant Knowledge")
 
         entities = [r for r in results if r.kind == "entity"]
         if entities:

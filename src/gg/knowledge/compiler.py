@@ -49,6 +49,7 @@ class KnowledgeCompiler:
         entity_count = self._compile_entities(events, structure, git_profile)
         fact_count = self._compile_fact_registry(events, git_profile)
         decision_count = self._compile_decisions(events, git_profile)
+        risk_count = self._compile_risk_register(git_profile, structure, events)
         self._compile_error_patterns(events)
         self._compile_pipeline_stats(events)
 
@@ -65,6 +66,7 @@ class KnowledgeCompiler:
 
         return {
             "entities": entity_count,
+            "risks": risk_count,
             "facts": fact_count,
             "decisions": decision_count,
             "events_processed": len(events),
@@ -424,6 +426,150 @@ class KnowledgeCompiler:
         for f in facts:
             new_lines.append(f"- **{f.key}**: {f.value} (source: {f.source}, {f.valid_from})")
         path.write_text(content + "\n".join(new_lines) + "\n", encoding="utf-8")
+
+    def _compile_risk_register(
+        self, git: GitProfile, structure: StructureMap, events: list[Event],
+    ) -> int:
+        from gg.analyzers.dependencies import analyze_dependencies
+
+        deps = analyze_dependencies(self._root)
+        risks: list[dict[str, str]] = []
+        risk_id = 0
+
+        # R: Bus factor risks
+        for module, count in git.bus_factor.items():
+            if count <= 1 and module not in (".", ""):
+                risk_id += 1
+                risks = [*risks, {
+                    "id": f"R{risk_id:03d}",
+                    "severity": "High",
+                    "category": "Bus Factor",
+                    "title": f"Single contributor for {module}/",
+                    "description": f"Module `{module}/` has only {count} contributor(s). "
+                                   f"Knowledge loss risk if that person leaves.",
+                    "recommendation": f"Cross-train team on `{module}/`, add documentation, pair program.",
+                }]
+
+        # R: High churn files (potential tech debt)
+        for ci in git.churn_analysis[:5]:
+            if ci.churn_ratio > 5.0 and ci.change_count >= 5:
+                risk_id += 1
+                risks = [*risks, {
+                    "id": f"R{risk_id:03d}",
+                    "severity": "Medium",
+                    "category": "Tech Debt",
+                    "title": f"High churn: {ci.path}",
+                    "description": f"`{ci.path}` changed {ci.change_count} times with churn ratio {ci.churn_ratio}. "
+                                   f"High volatility suggests unstable design or frequent hotfixes.",
+                    "recommendation": "Consider refactoring to stabilize the interface.",
+                }]
+
+        # R: Missing linters
+        if "linters" not in deps.existing_tools:
+            risk_id += 1
+            risks = [*risks, {
+                "id": f"R{risk_id:03d}",
+                "severity": "Medium",
+                "category": "Code Quality",
+                "title": "No linter configured",
+                "description": "No linting tools detected. Code style inconsistencies accumulate over time.",
+                "recommendation": f"Add a linter appropriate for {git.commit_style.get('top_types', 'the')} project.",
+            }]
+
+        # R: Missing tests
+        if "test_frameworks" not in deps.existing_tools:
+            risk_id += 1
+            risks = [*risks, {
+                "id": f"R{risk_id:03d}",
+                "severity": "High",
+                "category": "Code Quality",
+                "title": "No test framework detected",
+                "description": "No testing infrastructure found. Changes cannot be verified automatically.",
+                "recommendation": "Add a test framework and start with critical path tests.",
+            }]
+
+        # R: Missing CI
+        if "ci" not in deps.existing_tools:
+            risk_id += 1
+            risks = [*risks, {
+                "id": f"R{risk_id:03d}",
+                "severity": "Medium",
+                "category": "Process",
+                "title": "No CI/CD pipeline detected",
+                "description": "No CI configuration found. Builds and tests are not automated.",
+                "recommendation": "Add GitHub Actions / GitLab CI pipeline.",
+            }]
+
+        # R: Dormant files
+        if len(git.dormant_files) > 10:
+            risk_id += 1
+            examples = ", ".join(f"`{p}`" for p, _ in git.dormant_files[:3])
+            risks = [*risks, {
+                "id": f"R{risk_id:03d}",
+                "severity": "Low",
+                "category": "Maintenance",
+                "title": f"{len(git.dormant_files)} dormant files (>6 months unchanged)",
+                "description": f"Files not touched in 6+ months: {examples}, etc. "
+                               f"May be dead code or abandoned features.",
+                "recommendation": "Audit dormant files -- remove dead code, document stable modules.",
+            }]
+
+        # R: High risk score files
+        high_risk = [(p, s) for p, s in git.risk_scores if s > 5.0]
+        if high_risk:
+            risk_id += 1
+            examples = ", ".join(f"`{p}` ({s:.1f})" for p, s in high_risk[:3])
+            risks = [*risks, {
+                "id": f"R{risk_id:03d}",
+                "severity": "High",
+                "category": "Change Risk",
+                "title": f"{len(high_risk)} files with high change risk score",
+                "description": f"Files with composite risk >5.0 (churn + coupling + bus factor): {examples}. "
+                               f"Changes here are most likely to cause regressions.",
+                "recommendation": "Add tests for high-risk files before modifying. Use grepai trace callers.",
+            }]
+
+        # R: Recurring errors from pipeline
+        error_patterns = collect_error_patterns(events)
+        for pattern, count in error_patterns.items():
+            if count >= 3:
+                risk_id += 1
+                risks = [*risks, {
+                    "id": f"R{risk_id:03d}",
+                    "severity": "Medium",
+                    "category": "Reliability",
+                    "title": f"Recurring error: {pattern[:50]}",
+                    "description": f"Error pattern `{pattern}` occurred {count} times across pipeline runs.",
+                    "recommendation": "Investigate root cause. Add specific handling or fix.",
+                }]
+
+        if not risks:
+            return 0
+
+        lines = [
+            "# Risk Register", "",
+            "Auto-generated from project analysis. IDs are stable -- never renumber.",
+            "",
+            "| ID | Severity | Category | Title |",
+            "|----|----------|----------|-------|",
+        ]
+        for r in risks:
+            lines.append(f"| {r['id']} | {r['severity']} | {r['category']} | {r['title']} |")
+        lines.append("")
+
+        for r in risks:
+            lines.append(f"### {r['id']}: {r['title']}")
+            lines.append("")
+            lines.append(f"**Severity:** {r['severity']}  ")
+            lines.append(f"**Category:** {r['category']}")
+            lines.append("")
+            lines.append(r["description"])
+            lines.append("")
+            lines.append(f"**Recommendation:** {r['recommendation']}")
+            lines.append("")
+
+        (self._knowledge / "risk-register.md").write_text("\n".join(lines), encoding="utf-8")
+        return len(risks)
 
     def _compile_error_patterns(self, events: list[Event]) -> None:
         patterns = collect_error_patterns(events)

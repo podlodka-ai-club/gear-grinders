@@ -45,6 +45,7 @@ def run_init(
     skip_codex: bool,
     skip_knowledge: bool = False,
     non_interactive: bool,
+    deep: bool = False,
     debug: bool = False,
 ) -> None:
     console = Console()
@@ -163,6 +164,20 @@ def run_init(
     grepai_available = check_map.get("grepai", type("", (), {"ok": False})).ok
     if grepai_available:
         _init_grepai(project_path, console)
+
+    # 8e. Deep code audit (optional)
+    if deep and agent and agent.is_available():
+        from gg.generators.observations import run_deep_observations
+        console.print("  [bold]Running deep code audit...[/bold]")
+        obs_count = run_deep_observations(
+            project_path=project_path, agent=agent, console=console,
+        )
+        console.print(f"  [green]  -> {obs_count} observations in .gg/observations/[/green]")
+    elif deep and not (agent and agent.is_available()):
+        console.print("  [yellow]--deep requires Codex, skipping audit[/yellow]")
+
+    # 8f. Create goals file if not exists
+    _init_goals(project_path, user_ctx, console)
 
     # 9. Suggestions
     if not non_interactive:
@@ -286,6 +301,34 @@ def _offer_suggestions(
     if not (project_path / ".github" / "workflows").exists() and not (project_path / ".gitlab-ci.yml").exists():
         if Confirm.ask("  Add CI config template?", default=False):
             console.print("    Will be generated with future [bold]gg ci[/bold] command.")
+
+
+def _init_goals(project_path: Path, user_ctx: "UserContext | None", console: Console) -> None:
+    goals_path = project_path / ".gg" / "goals.md"
+    if goals_path.exists():
+        console.print(f"  [dim]goals.md already exists ({len(goals_path.read_text())} chars)[/dim]")
+        return
+
+    description = user_ctx.description if user_ctx else ""
+    content = (
+        "# Project Goals\n\n"
+        "Define the goals that guide all agent work on this project.\n"
+        "The agent reads this file before every task to stay aligned.\n\n"
+        "## Business Goals\n\n"
+        f"- {description or 'TODO: describe what the project should achieve'}\n\n"
+        "## Quality Criteria\n\n"
+        "- All changes must pass existing tests\n"
+        "- No regressions in core functionality\n"
+        "- Code follows project constitution (.gg/constitution.md)\n\n"
+        "## Priorities\n\n"
+        "- 1. Correctness\n"
+        "- 2. Maintainability\n"
+        "- 3. Performance\n\n"
+        "## Out of Scope\n\n"
+        "- TODO: define what the agent should NOT touch\n"
+    )
+    goals_path.write_text(content, encoding="utf-8")
+    console.print("  [green]  -> .gg/goals.md (edit to guide agent priorities)[/green]")
 
 
 def _init_grepai(project_path: Path, console: Console) -> None:

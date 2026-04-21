@@ -213,6 +213,20 @@ class KnowledgeEngine:
         """Find recurring error patterns."""
         return self._search.find_error_history(pattern)
 
+    def get_goals(self) -> str:
+        """Read project goals. Agent should call this before every task."""
+        goals_path = self._root / ".gg" / "goals.md"
+        if goals_path.exists():
+            return goals_path.read_text(encoding="utf-8")
+        return ""
+
+    def get_risks(self) -> str:
+        """Read risk register for awareness before changes."""
+        risk_path = self._knowledge / "risk-register.md"
+        if risk_path.exists():
+            return risk_path.read_text(encoding="utf-8")
+        return ""
+
     # -- Rebuild --
 
     def rebuild(self) -> dict[str, int]:
