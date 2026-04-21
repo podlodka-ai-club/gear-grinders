@@ -358,7 +358,8 @@ def generate_specs(
             compact_context += f"\n\n## Existing project rules (from AGENTS.md, first 1500 chars)\n\n{existing_agents_md[:1500]}"
         prompt = _build_full_prompt(user_ctx, "", existing_agents_md="")
         try:
-            raw = agent.generate(prompt, cwd=str(root), context=compact_context, timeout=90)
+            import tempfile
+            raw = agent.generate(prompt, cwd=tempfile.gettempdir(), context=compact_context, timeout=90)
             console.print("    Parsing Codex response...")
             sections = _parse_codex_output(raw)
             console.print(f"    Found {len(sections)} sections: {', '.join(sections.keys())}")
