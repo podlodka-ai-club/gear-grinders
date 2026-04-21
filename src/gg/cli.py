@@ -126,6 +126,56 @@ def knowledge_context(issue_title, body, path):
 
 
 @cli.command()
+@click.option("--path", type=click.Path(exists=True), default=".", help="Project path.")
+@click.option("--debug", is_flag=True, help="Show Codex output.")
+def constitution(path, debug):
+    """Regenerate constitution using Codex (takes 2-5 min)."""
+    from rich.console import Console
+
+    from gg.agents.codex import CodexAgent
+    from gg.analyzers.dependencies import analyze_dependencies
+    from gg.analyzers.languages import analyze_languages
+    from gg.analyzers.structure import analyze_structure
+
+    console = Console()
+    agent = CodexAgent(console=console, debug=debug)
+    if not agent.is_available():
+        console.print("[red]Codex CLI not found.[/red]")
+        raise SystemExit(1)
+
+    console.print("[bold]Generating constitution via Codex...[/bold]")
+    console.print("  This sends a compact project summary to Codex (read-only, no file access).")
+    console.print("  MCP hooks may add startup time. Please wait.\n")
+
+    root = Path(path).resolve()
+    compact = "\n\n".join([
+        analyze_languages(root).to_prompt_context(),
+        analyze_dependencies(root).to_prompt_context(),
+        analyze_structure(root).to_prompt_context(),
+    ])
+
+    prompt = (
+        "На основе контекста проекта выше, сформулируй набор правил (конституцию) "
+        "для разработчика. Включи: стек, архитектуру, стилизацию, управление данными, "
+        "практики разработки. Формат: markdown с ## секциями."
+    )
+
+    import tempfile
+    try:
+        raw = agent.generate(prompt, cwd=tempfile.gettempdir(), context=compact, timeout=300)
+        if raw:
+            gg_dir = root / ".gg"
+            gg_dir.mkdir(parents=True, exist_ok=True)
+            (gg_dir / "constitution.md").write_text(f"# Project Constitution\n\n{raw}\n", encoding="utf-8")
+            console.print(f"\n[green]Constitution written to .gg/constitution.md ({len(raw)} chars)[/green]")
+        else:
+            console.print("[yellow]Codex returned empty response. Local constitution unchanged.[/yellow]")
+    except RuntimeError as e:
+        console.print(f"[red]Codex failed: {e}[/red]")
+        console.print("Local constitution in .gg/constitution.md is still valid.")
+
+
+@cli.command()
 def run():
     """Supervisor loop: pick issues and orchestrate agents."""
     click.echo("Not implemented yet.")
