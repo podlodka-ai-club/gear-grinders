@@ -8,7 +8,6 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Confirm, Prompt
 
-from gg.agents.codex import CodexAgent
 from gg.analyzers.dependencies import DependencyReport, analyze_dependencies
 from gg.analyzers.git_history import GitProfile, analyze_git_history
 from gg.analyzers.languages import LanguageProfile, analyze_languages
@@ -99,7 +98,9 @@ def run_init(
     if user_ctx.integrations:
         console.print(f"  [green]Integrations:[/green] {user_ctx.integrations}")
 
-    agent = CodexAgent(console=console, debug=debug) if codex_available else None
+    # Codex is NOT used during init (too slow for analysis).
+    # It will be used later by gg run/issue for code generation.
+    agent = None
 
     # 6. Display summary
     _print_summary(languages, dependencies, structure, git_profile, console)
