@@ -1,0 +1,15 @@
+{
+  "number": 42,
+  "title": "Add dark mode toggle",
+  "body": "We need a dark mode toggle.\n\nBlocked by acme/web#41 and relates to #40.\n\n## Acceptance\n- [ ] Toggle visible in settings\n- [ ] Persists across reloads\n\nDesign: https://figma.com/file/xyz\nScreenshot: https://user-images.githubusercontent.com/1/abc.png\n\ncc @alice",
+  "url": "https://github.com/acme/web/issues/42",
+  "state": "OPEN",
+  "labels": [{"name": "feature"}, {"name": "ui"}],
+  "assignees": [{"login": "bob"}],
+  "author": {"login": "alice"},
+  "createdAt": "2026-01-10T12:00:00Z",
+  "updatedAt": "2026-01-12T08:30:00Z",
+  "comments": [
+    {"author": {"login": "alice"}, "body": "Start with a simple switch", "createdAt": "2026-01-10T13:00:00Z", "updatedAt": "2026-01-10T13:00:00Z"}
+  ]
+}

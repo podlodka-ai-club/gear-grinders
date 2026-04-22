@@ -121,6 +121,9 @@ def _smart_merge(
         if shutil.which("grepai"):
             gaps.append(_build_grepai_section())
 
+    if not _has_section(existing_lower, ["gg task fetcher", "canonical-task", ".gg/tasks/"]):
+        gaps.append(_build_task_fetcher_section())
+
     if constitution and not _has_section(existing_lower, ["constitution", "project rules"]):
         gaps.append("## GG References\n\n"
                     "- Constitution: `.gg/constitution.md`\n"
@@ -178,6 +181,27 @@ grepai trace callees "functionName"   # what does this function call?
 - Always run `grepai search` before modifying unfamiliar code areas
 - Use `grepai trace callers` before refactoring any public function
 - Prefer grepai over reading entire files to save tokens"""
+
+
+def _build_task_fetcher_section() -> str:
+    return """\
+## Task Context (gg task fetcher)
+
+When a `.gg/tasks/<ref>/task.json` file is available, it is the canonical
+description of the task you are working on. Shape and full field reference:
+[docs/canonical-task.md](docs/canonical-task.md). Example output:
+[docs/examples/github-290.json](docs/examples/github-290.json).
+
+Rules for agents:
+- Read `source`, `task`, and `context`. Ignore `raw`.
+- `task.type == "unknown"` or unlabeled `priority == "normal"` means the
+  fetcher did not infer; derive it from title/body yourself.
+- `context.acceptance_criteria`, when non-empty, is explicit and must be met.
+  Empty means derive from description.
+- `context.linked_tasks[*].content` contains the body of cross-referenced
+  tasks -- they often already describe root cause or proposed fixes.
+- `context.external_refs` may contain noisy URLs (log fragments picked up by
+  the regex). Treat them as hints, not facts."""
 
 
 def _build_testing_section(deps: DependencyReport) -> str:
@@ -248,6 +272,9 @@ def _build_agents_md(
         sections.append(_build_grepai_section())
         sections.append("")
 
+    sections.append(_build_task_fetcher_section())
+    sections.append("")
+
     if constitution:
         sections.append("## Project Rules")
         sections.append("")
@@ -306,6 +333,9 @@ def _build_claude_md(
     if shutil.which("grepai"):
         sections.append(_build_grepai_section())
         sections.append("")
+
+    sections.append(_build_task_fetcher_section())
+    sections.append("")
 
     if constitution:
         sections.append("## Conventions")

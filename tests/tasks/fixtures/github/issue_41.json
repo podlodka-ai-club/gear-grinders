@@ -1,0 +1,13 @@
+{
+  "number": 41,
+  "title": "Theme context provider",
+  "body": "Need a React context for theme. See acme/web#42 for the parent story.",
+  "url": "https://github.com/acme/web/issues/41",
+  "state": "OPEN",
+  "labels": [{"name": "tech-debt"}],
+  "assignees": [],
+  "author": {"login": "alice"},
+  "createdAt": "2026-01-09T10:00:00Z",
+  "updatedAt": "2026-01-09T10:00:00Z",
+  "comments": []
+}

@@ -1,0 +1,13 @@
+{
+  "number": 101,
+  "title": "Same problem via URL reference",
+  "body": "Observed same error.",
+  "url": "https://github.com/acme/web/issues/101",
+  "state": "OPEN",
+  "labels": [],
+  "assignees": [],
+  "author": {"login": "dave"},
+  "createdAt": "2026-03-26T12:00:00Z",
+  "updatedAt": "2026-03-26T12:00:00Z",
+  "comments": []
+}

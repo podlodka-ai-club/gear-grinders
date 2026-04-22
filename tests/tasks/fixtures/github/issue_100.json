@@ -1,0 +1,20 @@
+{
+  "number": 100,
+  "title": "Bug report without labels",
+  "body": "gRPC timeout during collection creation. No refs in body.",
+  "url": "https://github.com/acme/web/issues/100",
+  "state": "OPEN",
+  "labels": [],
+  "assignees": [],
+  "author": {"login": "charlie"},
+  "createdAt": "2026-03-27T01:43:25Z",
+  "updatedAt": "2026-03-27T01:45:43Z",
+  "comments": [
+    {
+      "author": {"login": "charlie"},
+      "body": "Found related: [#101](https://github.com/acme/web/issues/101) and acme/web#102 describe the same thing.",
+      "createdAt": "2026-03-27T01:45:43Z",
+      "updatedAt": ""
+    }
+  ]
+}
