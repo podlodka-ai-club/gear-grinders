@@ -144,6 +144,11 @@ def _desc_from_readme(root: Path) -> str:
         if not readme.exists():
             continue
         text = readme.read_text(encoding="utf-8", errors="ignore")
+
+        html_desc = _extract_html_description(text)
+        if html_desc:
+            return html_desc
+
         lines = text.strip().splitlines()
         past_title = False
         for line in lines:
@@ -159,13 +164,32 @@ def _desc_from_readme(root: Path) -> str:
                 break
             if stripped.startswith("- ") or stripped.startswith("* ") or stripped.startswith("|"):
                 continue
-            if stripped.startswith("[") or stripped.startswith("![") or stripped.startswith("<"):
+            if stripped.startswith("[") or stripped.startswith("!["):
+                continue
+            if stripped.startswith("<") and "<p>" not in stripped.lower():
                 continue
             if "roadmap" in stripped.lower() or "see our" in stripped.lower():
                 continue
             cleaned = _strip_markdown(stripped)
             if cleaned and len(cleaned) > 30:
                 return cleaned[:200]
+    return ""
+
+
+def _extract_html_description(text: str) -> str:
+    """Extract description from HTML tags like <p>description</p> near top of README."""
+    top = text[:2000]
+    for pattern in [
+        re.compile(r"<p[^>]*>\s*(.+?)\s*</p>", re.S),
+        re.compile(r"<h[23][^>]*>\s*(.+?)\s*</h[23]>", re.S),
+    ]:
+        for m in pattern.finditer(top):
+            inner = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+            if not inner or len(inner) < 15:
+                continue
+            if "roadmap" in inner.lower() or "http" in inner:
+                continue
+            return _strip_markdown(inner)[:200]
     return ""
 
 
