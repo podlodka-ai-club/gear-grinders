@@ -1,0 +1,13 @@
+{
+  "number": 102,
+  "title": "Same problem short ref",
+  "body": "Yet another report.",
+  "url": "https://github.com/acme/web/issues/102",
+  "state": "OPEN",
+  "labels": [],
+  "assignees": [],
+  "author": {"login": "eve"},
+  "createdAt": "2026-03-26T13:00:00Z",
+  "updatedAt": "2026-03-26T13:00:00Z",
+  "comments": []
+}

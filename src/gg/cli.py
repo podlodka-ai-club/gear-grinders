@@ -9,6 +9,10 @@ def cli():
     """GG -- agent orchestrator: backlog task -> pipeline -> PR."""
 
 
+from gg.tasks.cli import task as _task_group
+cli.add_command(_task_group)
+
+
 @cli.command()
 @click.option("--path", type=click.Path(exists=True), default=".", help="Target project path.")
 @click.option("--force", is_flag=True, help="Overwrite existing .gg/ directory.")

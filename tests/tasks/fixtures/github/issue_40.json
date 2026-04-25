@@ -1,0 +1,13 @@
+{
+  "number": 40,
+  "title": "Settings screen polish",
+  "body": "Various tweaks.",
+  "url": "https://github.com/acme/web/issues/40",
+  "state": "CLOSED",
+  "labels": [],
+  "assignees": [],
+  "author": {"login": "bob"},
+  "createdAt": "2026-01-05T09:00:00Z",
+  "updatedAt": "2026-01-08T11:00:00Z",
+  "comments": []
+}
