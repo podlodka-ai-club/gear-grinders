@@ -17,3 +17,8 @@ venv/
 openspec/
 AGENTS.md
 CLAUDE.md
+.omx/
+gg-test/
+.ai-factory.json
+.codex
+.claude
