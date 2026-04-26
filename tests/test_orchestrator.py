@@ -1304,7 +1304,8 @@ def test_pipeline_no_pr_completes_with_one_candidate(tmp_path):
     assert result["pr_url"] is None
     assert platform.comments
     assert platform.labels == [(42, ["gg:in-progress"]), (42, ["gg:done"])]
-    assert platform.removed_labels == [(42, ["gg:in-progress", "gg:blocked"])]
+    # in_review_label is removed as best-effort even if never set (no-op on real GitHub)
+    assert platform.removed_labels == [(42, ["gg:in-progress", "gg:blocked", "gg:in-review"])]
     runs = list((tmp_path / ".gg" / "runs").glob("*/state.json"))
     assert len(runs) == 1
     run_dir = runs[0].parent
@@ -5430,6 +5431,36 @@ def test_eligible_issues_no_filter_when_board_status_empty(tmp_path):
     eligible = pipeline._eligible_issues(issues)
 
     assert {i.number for i in eligible} == {1, 2}
+
+
+def test_eligible_issues_fetches_board_issues_missing_from_initial_list(tmp_path):
+    """Issues present on the board but absent from list_issues (limit too low) are fetched."""
+    init_repo(tmp_path)
+    (tmp_path / ".gg" / "params.yaml").write_text(
+        "verify:\n  tests: ''\nselection:\n  board_status: Ready\n",
+        encoding="utf-8",
+    )
+    missing_issue = Issue(number=99, title="Old Issue", body="", labels=["ai-ready"])
+    issues_in_list = [
+        Issue(number=1, title="One", body="", labels=["ai-ready"]),
+    ]
+    projects = FakeProjectsClient({99})
+
+    class PlatformWithOldIssue(MultiIssuePlatform):
+        def get_issue(self, number: int) -> Issue:
+            if number == 99:
+                return missing_issue
+            return super().get_issue(number)
+
+    platform = PlatformWithOldIssue([issues_in_list[0], missing_issue])
+    pipeline = OrchestratorPipeline(tmp_path, platform=platform, agent=FakeAgent())
+    pipeline._projects = projects
+
+    # Pass only the recent issues (as if limit cut off issue #99)
+    eligible = pipeline._eligible_issues(issues_in_list)
+
+    assert len(eligible) == 1
+    assert eligible[0].number == 99
 
 
 def test_eligible_issues_board_status_filter_gracefully_skipped_on_error(tmp_path):

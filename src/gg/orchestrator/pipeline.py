@@ -266,6 +266,7 @@ class OrchestratorPipeline:
             return
         labels = {
             self.config.task_system.work_label: "fbca04",
+            self.config.task_system.in_review_label: "0075ca",
             self.config.task_system.done_label: "0e8a16",
             self.config.task_system.blocked_label: "d93f0b",
         }
@@ -1600,11 +1601,16 @@ class OrchestratorPipeline:
             if cancelled:
                 return cancelled
         self._cleanup_integration_worktree(state)
-        done_error = self._mark_issue_done(issue.number)
-        if done_error:
-            state.fail(code="publish_done_failed", message=done_error)
-            self.store.write(state)
-            return {"run_id": state.run_id, "state": state.state.value, "error": state.last_error}
+        if no_pr:
+            done_error = self._mark_issue_done(issue.number)
+            if done_error:
+                state.fail(code="publish_done_failed", message=done_error)
+                self.store.write(state)
+                return {"run_id": state.run_id, "state": state.state.value, "error": state.last_error}
+        else:
+            in_review_error = self._mark_issue_in_review(issue.number)
+            if in_review_error:
+                log.warning("[%s] in-review label swap failed (non-fatal): %s", state.run_id, in_review_error)
         state.publishing_step = "done_marked"
         self.store.write(state)
         state.transition(TaskState.COMPLETED, reason="all publish side effects complete")
@@ -2108,12 +2114,24 @@ class OrchestratorPipeline:
         except Exception:
             return
 
+    def _mark_issue_in_review(self, issue_number: int) -> str | None:
+        try:
+            self.platform.publish_in_review(
+                issue_number,
+                work_label=self.config.task_system.work_label,
+                in_review_label=self.config.task_system.in_review_label,
+            )
+        except Exception as exc:
+            return str(exc)
+        return None
+
     def _mark_issue_done(self, issue_number: int) -> str | None:
         self._move_to_project_status(issue_number, self.config.project_board.status_done)
         try:
             self.platform.publish_done(
                 issue_number,
                 work_label=self.config.task_system.work_label,
+                in_review_label=self.config.task_system.in_review_label,
                 blocked_label=self.config.task_system.blocked_label,
                 done_label=self.config.task_system.done_label,
             )
@@ -2216,16 +2234,29 @@ class OrchestratorPipeline:
         }
 
     def _eligible_issues(self, issues: list[Issue]) -> list[Issue]:
-        eligible = [issue for issue in issues if self._issue_eligibility_reason(issue) == "eligible"]
         board_status = self.config.selection.board_status.strip()
         if board_status and self._projects is not None:
             try:
                 allowed = self._projects.get_issues_in_status(board_status)
+                # The initial list_issues fetch uses a low limit and may miss older issues.
+                # Supplement with any board-listed issue not already present.
+                by_number = {i.number: i for i in issues}
+                for num in allowed:
+                    if num not in by_number:
+                        try:
+                            by_number[num] = self.platform.get_issue(num)
+                        except Exception:
+                            pass
+                issues = list(by_number.values())
+                eligible = [i for i in issues if self._issue_eligibility_reason(i) == "eligible"]
                 before = len(eligible)
                 eligible = [i for i in eligible if i.number in allowed]
                 log.info("board_status filter %r: %d -> %d eligible issues", board_status, before, len(eligible))
             except Exception as exc:
                 log.warning("board_status filter failed, skipping: %s", exc)
+                eligible = [i for i in issues if self._issue_eligibility_reason(i) == "eligible"]
+        else:
+            eligible = [issue for issue in issues if self._issue_eligibility_reason(issue) == "eligible"]
         return sorted(eligible, key=lambda issue: (_priority_rank(issue.labels), issue.number))
 
     def _issue_selection_summary(self, issue: Issue, *, override_reason: str | None = None) -> dict[str, Any]:

@@ -9,6 +9,7 @@
 - verifies them with tests and other checks,
 - evaluates the results,
 - publishes the outcome as a comment and optional PR,
+- moves PR-backed work into review instead of marking it done immediately,
 - persists the whole run under `.gg/runs/<run_id>/`.
 
 The current implementation is centered around a durable state machine, resumable artifacts, sandbox-aware execution, and operator recovery commands.
@@ -20,8 +21,10 @@ The current implementation is centered around a durable state machine, resumable
 3. Task analysis builds a `task-brief` from the issue, comments, local inputs, and repo context from the knowledge engine.
 4. The orchestrator allocates candidate worktrees, runs agents, captures patches and artifacts, and executes verification commands.
 5. Deterministic evaluation selects a winner or requests repair / input.
-6. Publishing applies the winning patch in an integration worktree, optionally pushes a branch, creates or reuses a PR, posts result comments, and marks the issue done.
-7. `gg resume`, `gg retry`, `gg provide`, `gg cancel`, `gg clean`, and `gg status` operate entirely from durable state.
+6. Publishing applies the winning patch in an integration worktree, optionally pushes a branch, creates or reuses a PR, posts result comments, and:
+   for `--no-pr` marks the issue done, for PR mode swaps `work_label` to `in_review_label`.
+7. Selection can also filter by project-board status and will fetch board-listed issues that were missed by the initial `list_issues` limit.
+8. `gg resume`, `gg retry`, `gg provide`, `gg cancel`, `gg clean`, and `gg status` operate entirely from durable state.
 
 **State Graph**
 
@@ -57,6 +60,7 @@ flowchart TD
 - **Sandbox-aware execution**: Codex execution can run through `sandbox-runtime`; preflight artifacts record whether the sandbox is required and available.
 - **Verification-first evaluation**: candidates are scored only after verification results, policy checks, mutation checks, and baseline comparison.
 - **Idempotent publish flow**: publishing stays in `OutcomePublishing` until all side effects are complete.
+- **Tracker semantics**: PR-backed runs move issues into `in review`; local / no-PR runs mark them done directly.
 - **Recovery**: interrupted runs can be resumed from durable state; blocked and needs-input runs can be reactivated with issue comments or `gg provide`.
 
 **Key Commands**
@@ -83,7 +87,8 @@ Main runtime policy lives in `.gg/params.yaml`.
 
 Important sections:
 
-- `task_system`: platform selection, labels, claim/done semantics.
+- `task_system`: platform selection, labels, claim / in-review / done semantics.
+- `selection`: include / exclude labels plus optional `board_status`.
 - `runtime`: candidate fanout, timeouts, sandbox/runtime settings, network policy, disk policy, port range.
 - `verify`: setup/test/lint/typecheck/security/custom commands, baseline policy, advisory vs required checks.
 - `analysis`: issue/comment/context limits and context budget policy.
@@ -128,6 +133,7 @@ Typical run layout:
 - Cleanup respects terminal retention policy and reports reclaimable bytes.
 - Cost budgets activate only when exact `token_usage` or `total_usd` metrics are present.
 - Artifact checksums validate persisted sanitized bytes when `audit.hash_artifacts: true`.
+- Board-based selection can supplement the initial issue list with older board-listed issues missing from the first fetch window.
 
 **Testing**
 
