@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Callable
 
 from gg.agents.base import AgentBackend
 
@@ -26,13 +28,17 @@ def _stream_stderr_debug(proc: subprocess.Popen, console, stop_event: threading.
             console.print(Text(f"    {line}", style="dim"))
 
 
-def _progress_ticker(console, stop_event: threading.Event) -> None:
+def _progress_ticker(console, stop_event: threading.Event, progress_callback: Callable[[str], None] | None = None) -> None:
     start = time.monotonic()
     while not stop_event.is_set():
         stop_event.wait(15)
         if not stop_event.is_set():
             elapsed = int(time.monotonic() - start)
-            console.print(f"    [dim]... Codex working ({elapsed}s elapsed)[/dim]")
+            message = f"Codex working ({elapsed}s elapsed)"
+            if console is not None:
+                console.print(f"    [dim]... {message}[/dim]")
+            if progress_callback is not None:
+                progress_callback(message)
 
 
 def _get_fast_mode_flags() -> list[str]:
@@ -53,9 +59,13 @@ def _get_fast_mode_flags() -> list[str]:
 
 
 class CodexAgent(AgentBackend):
-    def __init__(self, console=None, debug: bool = False):
+    supports_task_analysis = True
+
+    def __init__(self, console=None, debug: bool = False, command: str = "codex", progress_callback: Callable[[str], None] | None = None):
         self._console = console
         self._debug = debug
+        self._command = command
+        self._progress_callback = progress_callback
 
     def generate(self, prompt: str, *, cwd: str | None = None, timeout: int | None = None,
                  context: str | None = None) -> str:
@@ -65,6 +75,10 @@ class CodexAgent(AgentBackend):
 
         for attempt in range(retries + 1):
             try:
+                self._emit_progress(
+                    f"starting {'fast' if context else 'full'} Codex run"
+                    + (f" (attempt {attempt + 1}/{retries + 1})" if retries else "")
+                )
                 if context:
                     output = self._run_fast(prompt, context, out_path, cwd, effective_timeout)
                 elif self._console:
@@ -73,10 +87,12 @@ class CodexAgent(AgentBackend):
                     output = self._run_silent(prompt, out_path, cwd, effective_timeout)
 
                 if output:
+                    self._emit_progress("Codex produced output")
                     return output
                 if attempt < retries:
                     if self._console:
                         self._console.print("    [yellow]Empty response, retrying...[/yellow]")
+                    self._emit_progress("Codex returned empty output; retrying")
                     continue
                 return ""
             except subprocess.TimeoutExpired:
@@ -84,6 +100,7 @@ class CodexAgent(AgentBackend):
                 if attempt < retries:
                     if self._console:
                         self._console.print(f"    [yellow]Timeout after {effective_timeout}s, retrying...[/yellow]")
+                    self._emit_progress(f"Codex timed out after {effective_timeout}s; retrying")
                     continue
                 raise RuntimeError(f"Codex timed out after {effective_timeout}s")
             except RuntimeError:
@@ -99,7 +116,7 @@ class CodexAgent(AgentBackend):
         full_input = f"{context}\n\n---\n\n{prompt}"
 
         cmd = [
-            "codex", "exec",
+            *self._command_args(), "exec",
             "--sandbox", "read-only",
             "--skip-git-repo-check",
             "--ephemeral",
@@ -142,7 +159,7 @@ class CodexAgent(AgentBackend):
         """Full agent mode: Codex reads files, uses tools."""
         stop_event = threading.Event()
         proc = subprocess.Popen(
-            ["codex", "exec", "-o", str(out_path), prompt],
+            [*self._command_args(), "exec", "-o", str(out_path), prompt],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -158,7 +175,7 @@ class CodexAgent(AgentBackend):
         else:
             worker = threading.Thread(
                 target=_progress_ticker,
-                args=(self._console, stop_event),
+                args=(self._console, stop_event, self._progress_callback),
                 daemon=True,
             )
         worker.start()
@@ -188,7 +205,7 @@ class CodexAgent(AgentBackend):
     def _run_silent(self, prompt: str, out_path: Path, cwd: str | None,
                     timeout: int = CODEX_TIMEOUT) -> str:
         result = subprocess.run(
-            ["codex", "exec", "-o", str(out_path), prompt],
+            [*self._command_args(), "exec", "-o", str(out_path), prompt],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -204,4 +221,27 @@ class CodexAgent(AgentBackend):
         return output
 
     def is_available(self) -> bool:
-        return shutil.which("codex") is not None
+        binary = self._command_args()[0] if self._command_args() else "codex"
+        return shutil.which(binary) is not None
+
+    def supports_sandbox_execution(self) -> bool:
+        return True
+
+    def build_sandbox_command(self, prompt: str, *, output_path: str | None = None) -> list[str]:
+        if not output_path:
+            raise ValueError("Codex sandbox execution requires output_path")
+        return [
+            *self._command_args(),
+            "exec",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-o",
+            output_path,
+            prompt,
+        ]
+
+    def _command_args(self) -> list[str]:
+        return shlex.split(self._command.strip() or "codex")
+
+    def _emit_progress(self, message: str) -> None:
+        if self._progress_callback is not None:
+            self._progress_callback(message)
