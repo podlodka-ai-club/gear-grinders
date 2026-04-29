@@ -15,6 +15,8 @@ from gg.analyzers.structure import StructureMap, analyze_structure
 from gg.generators.agent_files import generate_agent_files
 from gg.generators.specs import UserContext, generate_specs
 from gg.knowledge.engine import KnowledgeEngine
+from gg.orchestrator.config import default_params
+from gg.orchestrator.plugins import create_agent_backend
 from gg.platforms.base import detect_platform
 from gg.utils.git_ops import find_repo_root, get_main_branch, get_remote_url, parse_remote_url
 from gg.utils.system import run_all_checks
@@ -36,6 +38,15 @@ TEST_SUGGESTIONS: dict[str, dict[str, str]] = {
     "Rust": {"tool": "cargo test", "install": ""},
 }
 
+OPERATIONAL_GITIGNORE_ENTRIES = (
+    ".gg/runs/",
+    ".gg/runs-archive/",
+    ".gg/objects/",
+    ".gg/rate-limits.sqlite3*",
+    ".gg-worktrees/",
+    ".omx/",
+)
+
 
 def run_init(
     *,
@@ -46,6 +57,7 @@ def run_init(
     non_interactive: bool,
     deep: bool = False,
     debug: bool = False,
+    agent_backend: str = "auto",
 ) -> None:
     console = Console()
     project_path = Path(path).resolve()
@@ -56,7 +68,14 @@ def run_init(
     checks = run_all_checks(offer_install=not non_interactive)
 
     check_map = {c.name: c for c in checks}
-    codex_available = check_map.get("codex", type("", (), {"ok": False})).ok and not skip_codex
+    selected_backend = _select_init_backend(
+        requested=agent_backend,
+        check_map=check_map,
+        skip_agent=skip_codex,
+        non_interactive=non_interactive,
+        console=console,
+    )
+    selected_backend_available = bool(selected_backend)
 
     # 2. Find repo root
     repo_root = find_repo_root(project_path)
@@ -77,7 +96,7 @@ def run_init(
     console.print()
     languages, dependencies, structure, git_profile = _run_analyzers(project_path, console)
 
-    # 6. Build context from local analysis (replaces Codex research)
+    # 6. Build context from local analysis (replaces ad-hoc agent research)
     from gg.analyzers.codebase import analyze_codebase
     codebase_insights = analyze_codebase(project_path)
 
@@ -86,11 +105,14 @@ def run_init(
         domains=codebase_insights.get("domains", ""),
         integrations=codebase_insights.get("integrations", ""),
     )
-    # Codex fast mode: stdin + read-only + MCP disabled = instant response
-    from gg.agents.codex import CodexAgent
-    agent = CodexAgent(console=console, debug=debug) if codex_available else None
+    agent = (
+        create_agent_backend(selected_backend, console=console, debug=debug)
+        if selected_backend_available
+        else None
+    )
+    console.print(f"  Init backend: [bold]{selected_backend or 'local-only'}[/bold]")
 
-    # Quick Codex description if local one is weak
+    # Quick backend description if local one is weak
     if agent and agent.is_available() and len(user_ctx.description) < 30:
         ctx = f"{languages.primary_language} project, {', '.join(languages.frameworks[:3])}, dirs: {', '.join(structure.top_level_dirs[:5])}"
         try:
@@ -177,13 +199,13 @@ def run_init(
     # 8d. Deep code audit (optional)
     if deep and agent and agent.is_available():
         from gg.generators.observations import run_deep_observations
-        console.print("  [bold]Running deep code audit...[/bold]")
+        console.print(f"  [bold]Running deep code audit via {selected_backend}...[/bold]")
         obs_count = run_deep_observations(
             project_path=project_path, agent=agent, console=console,
         )
         console.print(f"  [green]  -> {obs_count} observations in .gg/observations/[/green]")
     elif deep and not (agent and agent.is_available()):
-        console.print("  [yellow]--deep requires Codex, skipping audit[/yellow]")
+        console.print(f"  [yellow]--deep requires {selected_backend}, skipping audit[/yellow]")
 
     # 8f. Create goals file if not exists
     _init_goals(project_path, user_ctx, console)
@@ -195,6 +217,8 @@ def run_init(
 
     # 10. Write config
     _write_config(project_path, platform, console)
+    _write_params(project_path, console, agent_backend=selected_backend)
+    _write_operational_gitignore(project_path, console)
 
     # 11. Summary
     _print_final(project_path, console)
@@ -233,6 +257,49 @@ def _detect_and_confirm_platform(
         console.print(f"  [yellow]Warning: {cli_tool} is not available. Some features will be limited.[/yellow]")
 
     return detected
+
+
+def _select_init_backend(
+    *,
+    requested: str,
+    check_map: dict[str, object],
+    skip_agent: bool,
+    non_interactive: bool,
+    console: Console,
+) -> str:
+    if skip_agent:
+        return ""
+    normalized = requested.strip().lower()
+    available = [
+        name
+        for name in ("codex", "claude")
+        if getattr(check_map.get(name), "ok", False)
+    ]
+    if normalized in {"codex", "claude"}:
+        if normalized not in available:
+            raise SystemExit(f"Requested init backend '{normalized}' is not available.")
+        return normalized
+    if normalized not in {"", "auto"}:
+        raise SystemExit(f"Unsupported init backend '{requested}'.")
+    if not available:
+        return ""
+    if len(available) == 1:
+        return available[0]
+    if non_interactive:
+        return "codex" if "codex" in available else available[0]
+    numbered = {str(index): name for index, name in enumerate(available, start=1)}
+    labels = "  ".join(f"{index}. {name}" for index, name in numbered.items())
+    default_choice = next(
+        (index for index, name in numbered.items() if name == "codex"),
+        next(iter(numbered)),
+    )
+    choice = Prompt.ask(
+        f"  Multiple init backends available. Which one should be used? {labels}",
+        choices=list(numbered),
+        default=default_choice,
+        console=console,
+    )
+    return numbered[choice]
 
 
 def _run_analyzers(
@@ -395,6 +462,59 @@ def _write_config(project_path: Path, platform: str, console: Console) -> None:
         yaml.dump(config, default_flow_style=False, allow_unicode=True),
         encoding="utf-8",
     )
+
+
+def _write_params(project_path: Path, console: Console, *, agent_backend: str = "codex") -> None:
+    params_path = project_path / ".gg" / "params.yaml"
+    params = default_params(project_path, agent_backend=agent_backend)
+    if params_path.exists():
+        existing = yaml.safe_load(params_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(existing, dict):
+            raise ValueError(f"{params_path}: expected YAML mapping")
+        changed = _merge_missing_params(existing, params)
+        if changed:
+            params_path.write_text(
+                yaml.dump(existing, default_flow_style=False, sort_keys=False, allow_unicode=True),
+                encoding="utf-8",
+            )
+            console.print("  [green]  -> .gg/params.yaml merged missing defaults[/green]")
+        else:
+            console.print("  [dim].gg/params.yaml already up to date[/dim]")
+        return
+
+    params_path.write_text(
+        yaml.dump(params, default_flow_style=False, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    console.print("  [green]  -> .gg/params.yaml[/green]")
+
+
+def _merge_missing_params(target: dict, defaults: dict) -> bool:
+    changed = False
+    for key, value in defaults.items():
+        if key not in target:
+            target[key] = value
+            changed = True
+            continue
+        if isinstance(target[key], dict) and isinstance(value, dict):
+            changed = _merge_missing_params(target[key], value) or changed
+    return changed
+
+
+def _write_operational_gitignore(project_path: Path, console: Console) -> None:
+    path = project_path / ".gitignore"
+    existing = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    existing_set = set(existing)
+    missing = [entry for entry in OPERATIONAL_GITIGNORE_ENTRIES if entry not in existing_set]
+    if not missing:
+        console.print("  [dim].gitignore already has gg operational entries[/dim]")
+        return
+    lines = [*existing]
+    if lines and lines[-1].strip():
+        lines.append("")
+    lines.extend(missing)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    console.print("  [green]  -> .gitignore gg operational entries[/green]")
 
 
 def _print_final(project_path: Path, console: Console) -> None:
