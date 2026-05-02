@@ -14,7 +14,8 @@
 
 The current implementation is centered around a durable state machine, resumable artifacts, sandbox-aware execution, and operator recovery commands.
 
-For a diagram-first architecture walkthrough, see [docs/diagram-design.md](docs/diagram-design.md).
+For a standalone SVG architecture diagram, see [docs/gg-architecture-diagram.html](docs/gg-architecture-diagram.html).
+For a diagram-first Markdown walkthrough, see [docs/diagram-design.md](docs/diagram-design.md).
 
 **How It Works**
 
