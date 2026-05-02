@@ -6,6 +6,7 @@ from pathlib import Path
 
 PROTOCOL_SURFACE_FILES = (
     "agent_catalog.py",
+    "agent_patterns.py",
     "protocol.py",
     "prompts.py",
     "executor.py",

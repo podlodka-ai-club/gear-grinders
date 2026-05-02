@@ -24,6 +24,7 @@ from gg.orchestrator.config import GGConfig, load_config, resolve_model_route
 from gg.orchestrator.context import ContextSnapshotStore
 from gg.orchestrator.evaluation import build_run_outcome, CandidateEvaluator
 from gg.orchestrator.executor import CandidateExecutor
+from gg.orchestrator.agent_patterns import blocking_agent_pattern_findings, verify_agent_patterns
 from gg.orchestrator.git import binary_changed_files as git_binary_changed_files
 from gg.orchestrator.git import changed_files as git_changed_files
 from gg.orchestrator.git import dependency_changed_files as git_dependency_changed_files
@@ -2527,17 +2528,11 @@ class OrchestratorPipeline:
         evaluation_path = state.artifacts.get("execution_evaluation") or state.artifacts.get("evaluation")
         evaluation = self.store.read_json(evaluation_path) if evaluation_path else {}
         review_dimensions = dict(evaluation.get("review_dimensions") or {})
+        enforce_reviewers = bool(review_dimensions)
         result_path = str(selected_candidate_metadata.get("result_path") or "")
         candidate_result = self.store.read_json(result_path) if result_path else {}
         changed_files = list(candidate_result.get("changed_files") or selected_candidate_metadata.get("changed_files") or [])
         required_reviewers = required_reviewers_for_files(changed_files)
-        blockers = [
-            f"{name}: {', '.join(map(str, details.get('reasons') or [])) or details.get('status', 'failed')}"
-            for name, details in review_dimensions.items()
-            if str(details.get("status", "")).lower() != "pass"
-        ]
-        if review_dimensions:
-            blockers.extend(review_gate_blockers(review_dimensions, required_reviewers))
         verification_sources = {
             "candidate_verification": str(selected_candidate_metadata.get("verification_path") or ""),
             "integration_verification": state.artifacts.get("integration_verification", ""),
@@ -2551,6 +2546,40 @@ class OrchestratorPipeline:
         if result_path:
             required_artifacts["selected_candidate_result"] = result_path
         missing_artifacts = [name for name, value in required_artifacts.items() if not value]
+        agent_pattern_check = verify_agent_patterns(self.project_path, changed_files=changed_files)
+        agent_pattern_blockers = blocking_agent_pattern_findings(agent_pattern_check.findings or [])
+        agent_pattern_payload = {
+            "schema_version": 1,
+            "checks": [agent_pattern_check.to_dict()],
+            "failed_commands": _failed_commands([agent_pattern_check]),
+            "required_passed": not agent_pattern_blockers,
+            "advisory_failed_commands": [],
+            "findings": agent_pattern_check.findings or [],
+            "blocking_findings": agent_pattern_blockers,
+        }
+        agent_pattern_path = self.store.write_json(
+            state.run_id,
+            "artifacts/agent-pattern-verification.json",
+            agent_pattern_payload,
+        )
+        state.artifacts["agent_pattern_verification"] = agent_pattern_path
+        verification_sources["agent_pattern_verification"] = agent_pattern_path
+        review_dimensions["agent_patterns"] = {
+            "status": "fail" if agent_pattern_blockers else "pass",
+            "reasons": [
+                str(finding.get("message") or finding.get("rule_id") or "agent pattern violation")
+                for finding in agent_pattern_blockers
+            ]
+            or ["agent pattern verification passed"],
+        }
+        blockers = [
+            f"{name}: {', '.join(map(str, details.get('reasons') or [])) or details.get('status', 'failed')}"
+            for name, details in review_dimensions.items()
+            if str(details.get("status", "")).lower() != "pass"
+        ]
+        if enforce_reviewers:
+            blockers.extend(review_gate_blockers(review_dimensions, required_reviewers))
+        blockers.extend(_agent_pattern_blockers(agent_pattern_blockers))
         manifest_check = verify_prompt_manifest(self.project_path)
         protocol_gate = build_protocol_obligations(
             required_artifacts=required_artifacts,
@@ -2563,7 +2592,7 @@ class OrchestratorPipeline:
                 "missing": manifest_check.missing,
                 "mismatched": manifest_check.mismatched,
             },
-            enforce_reviewers=bool(review_dimensions),
+            enforce_reviewers=enforce_reviewers,
         )
         blockers.extend(protocol_gate["blockers"])
         payload = {
@@ -2580,9 +2609,17 @@ class OrchestratorPipeline:
                 "required_artifacts": required_artifacts,
                 "missing_artifacts": missing_artifacts,
                 "changed_files": changed_files,
+                "agent_patterns_status": agent_pattern_check.status,
                 "protocol_status": protocol_gate["status"],
             },
             "protocol_obligations": protocol_gate,
+            "agent_patterns": {
+                "artifact": agent_pattern_path,
+                "status": agent_pattern_check.status,
+                "required_passed": not agent_pattern_blockers,
+                "findings": agent_pattern_check.findings or [],
+                "blocking_findings": agent_pattern_blockers,
+            },
             "source_artifacts": verification_sources,
             "blockers": blockers,
             "summary": (
@@ -3097,6 +3134,18 @@ def _raw_issue_artifact(issue: Issue, brief: TaskBrief, analysis_config=None) ->
 
 def _failed_commands(checks) -> list[str]:
     return [check.command for check in checks if check.status not in {"passed", "skipped", "flaky"}]
+
+
+def _agent_pattern_blockers(findings: list[dict[str, Any]]) -> list[str]:
+    blockers: list[str] = []
+    for finding in findings:
+        location = str(finding.get("path") or finding.get("file") or "")
+        line = finding.get("line")
+        if location and line:
+            location = f"{location}:{line}"
+        message = str(finding.get("message") or finding.get("rule_id") or "agent pattern violation")
+        blockers.append(f"agent-patterns: {location} {message}".strip())
+    return blockers
 
 
 def _default_verification_parser(category: str, command: str) -> str:

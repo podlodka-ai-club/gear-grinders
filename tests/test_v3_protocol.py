@@ -7,6 +7,7 @@ from click.testing import CliRunner
 
 from gg.cli import cli
 from gg.orchestrator.agent_catalog import agent_catalog_context, load_agent_catalog, verify_agent_catalog, write_agent_catalog
+from gg.orchestrator.agent_patterns import verify_agent_patterns
 from gg.orchestrator.executor import CandidateExecutor
 from gg.orchestrator.memory import (
     append_constitution_lesson,
@@ -196,6 +197,7 @@ def test_prompt_manifest_tracks_protocol_surfaces(tmp_path):
     path = write_prompt_manifest(tmp_path)
     text = path.read_text(encoding="utf-8")
 
+    assert "gg/orchestrator/agent_patterns.py" in text
     assert "gg/orchestrator/protocol.py" in text
     assert "gg/orchestrator/agent_catalog.py" in text
     assert "gg/orchestrator/review_gates.py" in text
@@ -218,10 +220,10 @@ def test_prompt_manifest_fails_when_new_protocol_surface_is_untracked(tmp_path):
 
 
 def test_review_gate_triggers_are_file_based():
-    reviewers = required_reviewers_for_files(["src/auth/session.py", "migrations/001.sql"])
+    reviewers = required_reviewers_for_files(["src/auth/session.py", "migrations/001.sql", "prompts/agent.md"])
     slugs = {reviewer["slug"] for reviewer in reviewers}
 
-    assert {"qa-verifier", "security-reviewer", "sre-observability"} <= slugs
+    assert {"agent-pattern-verifier", "qa-verifier", "security-reviewer", "sre-observability"} <= slugs
     blockers = review_gate_blockers(
         {"security": {"status": "fail", "reasons": ["secret leaked"]}, "tests": {"status": "pass"}},
         reviewers,
@@ -245,6 +247,55 @@ def test_protocol_obligations_block_missing_required_evidence():
     assert "missing artifact: candidate_verification" in gate["blockers"]
     assert any("security-reviewer" in blocker for blocker in gate["blockers"])
     assert any("protocol surface integrity failed" in blocker for blocker in gate["blockers"])
+
+
+def test_agent_patterns_block_unbounded_retry_and_loop(tmp_path):
+    (tmp_path / "agent.py").write_text(
+        "from tenacity import retry\n\n"
+        "@retry\n"
+        "def call_model():\n"
+        "    while True:\n"
+        "        call_model()\n",
+        encoding="utf-8",
+    )
+
+    check = verify_agent_patterns(tmp_path)
+
+    assert check.status == "failed"
+    rule_ids = {finding["rule_id"] for finding in check.findings or []}
+    assert {"unbounded-retry", "unbounded-agent-loop"} <= rule_ids
+    assert all(finding["reliability"] == "P" for finding in check.findings or [])
+
+
+def test_agent_patterns_detect_prompt_tool_registry_mismatch(tmp_path):
+    (tmp_path / "tools.py").write_text(
+        "def search_web_tool():\n"
+        "    return 'ok'\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "prompts.md").write_text(
+        "Use tool: send_email after searching.\n",
+        encoding="utf-8",
+    )
+
+    check = verify_agent_patterns(tmp_path)
+
+    assert check.status == "failed"
+    assert any(
+        finding["rule_id"] == "tool-registry-mismatch" and finding["reliability"] == "P"
+        for finding in check.findings or []
+    )
+
+
+def test_agent_patterns_report_context_size_as_heuristic(tmp_path):
+    (tmp_path / "prompt.md").write_text("x" * 18_000, encoding="utf-8")
+
+    check = verify_agent_patterns(tmp_path)
+
+    assert check.status == "passed"
+    assert check.findings
+    assert check.findings[0]["rule_id"] == "context-size-risk"
+    assert check.findings[0]["reliability"] == "H"
 
 
 def test_truth_coverage_tracks_spec_test_and_code_markers(tmp_path):
