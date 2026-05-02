@@ -432,6 +432,26 @@ def status(run_id, path, as_json):
 
 
 @cli.command()
+@click.argument("run_id")
+@click.option("--path", type=click.Path(exists=True), default=".", help="Project path.")
+@click.option("--json", "as_json", is_flag=True, help="Print machine-readable JSON.")
+def report(run_id, path, as_json):
+    """Show a durable run report with stages, verification, winner, and cost."""
+    import json
+
+    from rich.console import Console
+
+    from gg.orchestrator.pipeline import OrchestratorPipeline
+    from gg.orchestrator.report import format_run_report
+
+    payload = OrchestratorPipeline(path).report(run_id)
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    Console().print(format_run_report(payload))
+
+
+@cli.command()
 @click.argument("run_id", required=False, default=None)
 @click.option("--path", type=click.Path(exists=True), default=".", help="Project path.")
 @click.option("--dry-run/--execute", default=True, help="Preview cleanup unless --execute is used.")
@@ -576,6 +596,34 @@ def doctor(path, as_json):
 
 @cli.command()
 @click.argument("pr_number", type=int)
-def review(pr_number):
+@click.option("--path", type=click.Path(exists=True), default=".", help="Project path.")
+@click.option("--agent-backend", type=click.Choice(["codex", "claude"]), default=None, help="Override review backend.")
+@click.option("--comment", is_flag=True, help="Post the generated review as a PR/MR comment.")
+@click.option("--debug", is_flag=True, help="Show backend output and verbose logging.")
+@click.option("--json", "as_json", is_flag=True, help="Print machine-readable JSON.")
+def review(pr_number, path, agent_backend, comment, debug, as_json):
     """Run agentic code review on a PR."""
-    click.echo(f"Not implemented yet: review PR #{pr_number}")
+    import json
+
+    from rich.console import Console
+    from rich.markdown import Markdown
+
+    from gg.orchestrator.review import review_pull_request
+
+    _setup_logging(debug)
+    result = review_pull_request(
+        path,
+        pr_number,
+        agent_backend=agent_backend,
+        comment=comment,
+        debug=debug,
+    )
+    if as_json:
+        click.echo(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+    console = Console()
+    pr = result["pr"]
+    console.print(f"[bold]PR #{pr['number']}:[/bold] {pr['title']}")
+    console.print(Markdown(result["review"]))
+    if result["posted"]:
+        console.print("[green]Review comment posted.[/green]")
