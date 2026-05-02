@@ -71,8 +71,9 @@ flowchart TD
 - **Project precedence**: candidate handoffs include compact rules from `.gg/constitution.md`, repair lessons, exemplars, and recent memory patterns; `## Deep Reference` sections are omitted unless explicitly pulled later.
 - **Structured memory**: `.gg/memory/session-handoff.md`, `.gg/memory/decisions.md`, and `.gg/memory/patterns.md` store validated run state, decisions, and reusable lessons.
 - **Truth traceability**: `gg truth parse` derives `.gg/requirements.json` from markdown truth sources, `gg truth coverage` reports spec-to-test / spec-to-code marker coverage, and `gg truth sync` explicitly syncs approved decisions into `.gg/constitution.md`.
-- **Agent catalog**: `.gg/agent-catalog.json` records the small set of built-in reviewer / executor roles, phases, triggers, and required artifacts.
-- **Prompt integrity**: `gg init` writes `.gg/prompt-manifest.sha256`; `gg doctor` reports prompt source drift with a concrete fix.
+- **Agent catalog**: `.gg/agent-catalog.json` records reviewer / executor roles with category, protocol, readonly, model, tag, domain, phase, trigger, and required-artifact metadata; `.gg/agent-catalog.sha256` detects local catalog drift.
+- **Protocol obligations**: final verification writes explicit completion obligations for required artifacts, reviewer gates, and protocol-surface integrity before a run can publish.
+- **Prompt and protocol integrity**: `gg init` writes `.gg/prompt-manifest.sha256`; `gg doctor` reports prompt, reviewer, catalog, and protocol source drift with a concrete fix.
 - **Idempotent publish flow**: publishing stays in `OutcomePublishing` until all side effects are complete.
 - **Tracker semantics**: PR-backed runs move issues into `in review`; local / no-PR runs mark them done directly.
 - **Recovery**: interrupted runs can be resumed from durable state; each resume writes `artifacts/resume-plan-vN.json` explaining what is reused or rerun.
@@ -135,6 +136,7 @@ Typical run layout:
 .gg/
   params.yaml
   agent-catalog.json
+  agent-catalog.sha256
   prompt-manifest.sha256
   memory/
     session-handoff.md
@@ -177,6 +179,7 @@ Typical run layout:
 - `gg report <run-id>` derives its human-readable output from `state.json`, `pipeline.jsonl`, `run-summary.json`, candidate artifacts, verification artifacts, and `cost.jsonl`.
 - Resume does not promise to continue a live backend session; it resumes the orchestrator phase and reruns interrupted candidate work when needed.
 - Trigger-based review requirements are deterministic: every change requires QA, auth/secrets/admin paths require security review, DB/migration/infra paths require operability review, and frontend paths require code-quality review.
+- Final verification includes a machine-readable `protocol_obligations` block showing which artifacts, reviewers, and protocol surfaces satisfied the publish gate.
 - Successful runs append a handoff entry to `.gg/memory/session-handoff.md` and a compact learned-pattern line to `.gg/constitution.md`.
 - Artifact checksums validate persisted sanitized bytes when `audit.hash_artifacts: true`.
 - Board-based selection can supplement the initial issue list with older board-listed issues missing from the first fetch window.

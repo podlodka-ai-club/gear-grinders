@@ -1433,6 +1433,12 @@ def test_pipeline_no_pr_completes_with_one_candidate(tmp_path):
     assert set(final_verification["review_dimensions"]) == {
         "architecture", "code", "security", "tests", "operability",
     }
+    assert final_verification["protocol_obligations"]["status"] == "satisfied"
+    assert final_verification["completion_gates"]["protocol_status"] == "satisfied"
+    assert any(
+        obligation["id"] == "reviewer:qa-verifier"
+        for obligation in final_verification["protocol_obligations"]["obligations"]
+    )
 
 
 def test_publish_outcome_failure_does_not_persist_completed(monkeypatch, tmp_path):

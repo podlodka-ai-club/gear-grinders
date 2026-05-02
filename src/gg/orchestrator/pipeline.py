@@ -44,6 +44,8 @@ from gg.orchestrator.lock import LockManager
 from gg.orchestrator.logging import mask_secrets
 from gg.orchestrator.memory import append_constitution_lesson, append_memory_entry
 from gg.orchestrator.plugins import create_agent_backend, create_platform
+from gg.orchestrator.prompt_manifest import verify_prompt_manifest
+from gg.orchestrator.protocol import build_protocol_obligations
 from gg.orchestrator.rate_limit import RateLimitThrottleError
 from gg.orchestrator.report import build_run_report
 from gg.orchestrator.review_gates import required_reviewers_for_files, review_gate_blockers
@@ -2549,7 +2551,21 @@ class OrchestratorPipeline:
         if result_path:
             required_artifacts["selected_candidate_result"] = result_path
         missing_artifacts = [name for name, value in required_artifacts.items() if not value]
-        blockers.extend(f"missing artifact: {name}" for name in missing_artifacts)
+        manifest_check = verify_prompt_manifest(self.project_path)
+        protocol_gate = build_protocol_obligations(
+            required_artifacts=required_artifacts,
+            review_dimensions=review_dimensions,
+            required_reviewers=required_reviewers,
+            source_artifacts=verification_sources,
+            surface_integrity={
+                "status": manifest_check.status,
+                "message": manifest_check.message,
+                "missing": manifest_check.missing,
+                "mismatched": manifest_check.mismatched,
+            },
+            enforce_reviewers=bool(review_dimensions),
+        )
+        blockers.extend(protocol_gate["blockers"])
         payload = {
             "schema_version": 1,
             "run_id": state.run_id,
@@ -2564,7 +2580,9 @@ class OrchestratorPipeline:
                 "required_artifacts": required_artifacts,
                 "missing_artifacts": missing_artifacts,
                 "changed_files": changed_files,
+                "protocol_status": protocol_gate["status"],
             },
+            "protocol_obligations": protocol_gate,
             "source_artifacts": verification_sources,
             "blockers": blockers,
             "summary": (
