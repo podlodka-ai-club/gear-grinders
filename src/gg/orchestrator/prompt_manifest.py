@@ -10,6 +10,7 @@ PROTOCOL_SURFACE_FILES = (
     "protocol.py",
     "prompts.py",
     "executor.py",
+    "finding_feedback.py",
     "prompt_manifest.py",
     "review.py",
     "review_gates.py",

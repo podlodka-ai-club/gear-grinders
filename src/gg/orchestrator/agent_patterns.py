@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
+from gg.orchestrator.finding_feedback import annotate_findings_with_feedback, assign_finding_ids
 from gg.orchestrator.verification import CheckResult
 
 BLOCKING_RELIABILITY = "P"
@@ -100,6 +101,7 @@ def verify_agent_patterns(
                     )
                 )
 
+    findings = annotate_findings_with_feedback(root, assign_finding_ids(findings, prefix="AP"))
     blocking = blocking_agent_pattern_findings(findings)
     return CheckResult(
         command=AGENT_PATTERN_COMMAND,
@@ -118,6 +120,7 @@ def blocking_agent_pattern_findings(findings: Iterable[dict[str, Any]]) -> list[
         for finding in findings
         if str(finding.get("reliability") or "") == BLOCKING_RELIABILITY
         and str(finding.get("severity") or "").lower() in BLOCKING_SEVERITIES
+        and not finding.get("suppressed")
     ]
 
 

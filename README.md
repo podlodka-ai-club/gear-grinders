@@ -73,6 +73,7 @@ flowchart TD
 - **Truth traceability**: `gg truth parse` derives `.gg/requirements.json` from markdown truth sources, `gg truth coverage` reports spec-to-test / spec-to-code marker coverage, and `gg truth sync` explicitly syncs approved decisions into `.gg/constitution.md`.
 - **Agent catalog**: `.gg/agent-catalog.json` records reviewer / executor roles with category, protocol, readonly, model, tag, domain, phase, trigger, and required-artifact metadata; `.gg/agent-catalog.sha256` detects local catalog drift.
 - **Agent-pattern verifier**: final verification scans changed agent/prompt surfaces for mechanical `[P]` blockers such as unbounded loops, unbounded retries, and prompt tool references that are not registered; heuristic `[H]` context-size findings remain advisory.
+- **Finding feedback loop**: findings get stable IDs and fingerprints; accepted, ignored, and false-positive findings are stored in `.gg/accepted-findings.json` and suppress repeat blocking while remaining visible in reports.
 - **Protocol obligations**: final verification writes explicit completion obligations for required artifacts, reviewer gates, and protocol-surface integrity before a run can publish.
 - **Prompt and protocol integrity**: `gg init` writes `.gg/prompt-manifest.sha256`; `gg doctor` reports prompt, reviewer, catalog, and protocol source drift with a concrete fix.
 - **Idempotent publish flow**: publishing stays in `OutcomePublishing` until all side effects are complete.
@@ -104,6 +105,8 @@ gg constitution --learn "Prefer context-only review for untrusted PR diffs"
 gg memory append --file patterns --summary "Avoid broad rewrites" --body "Minimal patches verified faster."
 gg memory latest --file session-handoff
 gg memory validate
+gg findings list --json
+gg findings record --artifact .gg/runs/<run-id>/artifacts/agent-pattern-verification.json --id AP1 --status accepted --reason "Intentional bounded watchdog."
 gg truth parse
 gg truth coverage --refresh
 gg truth sync
@@ -138,6 +141,7 @@ Typical run layout:
   params.yaml
   agent-catalog.json
   agent-catalog.sha256
+  accepted-findings.json
   prompt-manifest.sha256
   memory/
     session-handoff.md
@@ -181,7 +185,8 @@ Typical run layout:
 - `gg report <run-id>` derives its human-readable output from `state.json`, `pipeline.jsonl`, `run-summary.json`, candidate artifacts, verification artifacts, and `cost.jsonl`.
 - Resume does not promise to continue a live backend session; it resumes the orchestrator phase and reruns interrupted candidate work when needed.
 - Trigger-based review requirements are deterministic: every change requires QA, auth/secrets/admin paths require security review, DB/migration/infra paths require operability review, and frontend paths require code-quality review.
-- Agent-pattern verification records findings with `rule_id`, `reliability`, `severity`, location, evidence, and remediation; only high/critical `[P]` findings block publishing by default.
+- Agent-pattern verification records findings with stable `finding_id`, fingerprint, `rule_id`, `reliability`, `severity`, status, suppression flag, location, evidence, and remediation; only unsuppressed high/critical `[P]` findings block publishing by default.
+- Human feedback is explicit: `accepted`, `ignored`, and `false_positive` findings are treated as accepted risks for future runs, while `open` and `fixed` do not suppress new blockers.
 - Final verification includes a machine-readable `protocol_obligations` block showing which artifacts, reviewers, and protocol surfaces satisfied the publish gate.
 - Successful runs append a handoff entry to `.gg/memory/session-handoff.md` and a compact learned-pattern line to `.gg/constitution.md`.
 - Artifact checksums validate persisted sanitized bytes when `audit.hash_artifacts: true`.

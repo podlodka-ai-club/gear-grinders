@@ -9,6 +9,7 @@ from gg.cli import cli
 from gg.orchestrator.agent_catalog import agent_catalog_context, load_agent_catalog, verify_agent_catalog, write_agent_catalog
 from gg.orchestrator.agent_patterns import verify_agent_patterns
 from gg.orchestrator.executor import CandidateExecutor
+from gg.orchestrator.finding_feedback import record_finding_feedback
 from gg.orchestrator.memory import (
     append_constitution_lesson,
     append_memory_entry,
@@ -198,6 +199,7 @@ def test_prompt_manifest_tracks_protocol_surfaces(tmp_path):
     text = path.read_text(encoding="utf-8")
 
     assert "gg/orchestrator/agent_patterns.py" in text
+    assert "gg/orchestrator/finding_feedback.py" in text
     assert "gg/orchestrator/protocol.py" in text
     assert "gg/orchestrator/agent_catalog.py" in text
     assert "gg/orchestrator/review_gates.py" in text
@@ -265,6 +267,30 @@ def test_agent_patterns_block_unbounded_retry_and_loop(tmp_path):
     rule_ids = {finding["rule_id"] for finding in check.findings or []}
     assert {"unbounded-retry", "unbounded-agent-loop"} <= rule_ids
     assert all(finding["reliability"] == "P" for finding in check.findings or [])
+
+
+def test_agent_patterns_suppress_accepted_finding_feedback(tmp_path):
+    (tmp_path / "agent.py").write_text(
+        "def run_forever():\n"
+        "    while True:\n"
+        "        run_forever()\n",
+        encoding="utf-8",
+    )
+    first = verify_agent_patterns(tmp_path)
+    assert first.status == "failed"
+
+    record_finding_feedback(
+        tmp_path,
+        first.findings[0],
+        status="accepted",
+        reason="intentional local watchdog loop in this test fixture",
+    )
+    second = verify_agent_patterns(tmp_path)
+
+    assert second.status == "passed"
+    assert second.findings[0]["status"] == "accepted"
+    assert second.findings[0]["suppressed"] is True
+    assert second.findings[0]["finding_id"] == "AP1"
 
 
 def test_agent_patterns_detect_prompt_tool_registry_mismatch(tmp_path):

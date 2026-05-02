@@ -25,6 +25,7 @@ from gg.orchestrator.context import ContextSnapshotStore
 from gg.orchestrator.evaluation import build_run_outcome, CandidateEvaluator
 from gg.orchestrator.executor import CandidateExecutor
 from gg.orchestrator.agent_patterns import blocking_agent_pattern_findings, verify_agent_patterns
+from gg.orchestrator.finding_feedback import suppressing_feedback_count
 from gg.orchestrator.git import binary_changed_files as git_binary_changed_files
 from gg.orchestrator.git import changed_files as git_changed_files
 from gg.orchestrator.git import dependency_changed_files as git_dependency_changed_files
@@ -2556,6 +2557,7 @@ class OrchestratorPipeline:
             "advisory_failed_commands": [],
             "findings": agent_pattern_check.findings or [],
             "blocking_findings": agent_pattern_blockers,
+            "suppressed_findings": suppressing_feedback_count(agent_pattern_check.findings or []),
         }
         agent_pattern_path = self.store.write_json(
             state.run_id,
@@ -2619,6 +2621,7 @@ class OrchestratorPipeline:
                 "required_passed": not agent_pattern_blockers,
                 "findings": agent_pattern_check.findings or [],
                 "blocking_findings": agent_pattern_blockers,
+                "suppressed_findings": suppressing_feedback_count(agent_pattern_check.findings or []),
             },
             "source_artifacts": verification_sources,
             "blockers": blockers,

@@ -1437,6 +1437,7 @@ def test_pipeline_no_pr_completes_with_one_candidate(tmp_path):
     assert final_verification["completion_gates"]["protocol_status"] == "satisfied"
     assert final_verification["completion_gates"]["agent_patterns_status"] in {"passed", "skipped"}
     assert final_verification["agent_patterns"]["required_passed"] is True
+    assert final_verification["agent_patterns"]["suppressed_findings"] == 0
     assert final_verification["source_artifacts"]["agent_pattern_verification"].endswith(
         "artifacts/agent-pattern-verification.json"
     )

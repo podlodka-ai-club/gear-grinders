@@ -108,7 +108,8 @@ def format_run_report(report: dict[str, Any]) -> str:
             "  agent-patterns"
             f"             {agent_patterns.get('status')} "
             f"findings={len(agent_patterns.get('findings') or [])} "
-            f"blocking={len(agent_patterns.get('blocking_findings') or [])}"
+            f"blocking={len(agent_patterns.get('blocking_findings') or [])} "
+            f"suppressed={agent_patterns.get('suppressed_findings') or 0}"
         )
     files = report.get("files_changed") or []
     lines.append("")
